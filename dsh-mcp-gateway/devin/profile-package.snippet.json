@@ -1,0 +1,13 @@
+{
+  "_comment": "Merge into $DSH_HOME/profiles/web/package.json to enable the Devin plugin, then run `pnpm install` (or npm install) inside the profile directory.",
+  "dependencies": {
+    "@quonaro/dsh-plugin-devin": "0.1.4"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@quonaro/dsh-plugin-devin"
+      ]
+    }
+  }
+}

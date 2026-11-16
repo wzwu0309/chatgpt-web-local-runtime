@@ -1,0 +1,27 @@
+# Append to $DSH_HOME/profiles/web/cordis.patch.yml when enabling Devin.
+# `model` becomes `--model` on `devin -p` for the delegation tool and /devin
+# command; the provider `models` table maps selector ids to ACP
+# `session/set_config_option` values (devinModel must match the account
+# catalog, see `devin models`). Point devinPath at your devin binary.
+
+# Default to the devin provider so manual sessions work without a model API key.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: devin
+    model: swe-2-high
+- id: dsh-plugin-devin
+  name: "@quonaro/dsh-plugin-devin"
+  config:
+    devinPath: /absolute/path/to/devin
+    model: "swe-2-high"
+- id: dsh-plugin-devin-provider
+  name: "@quonaro/dsh-plugin-devin/provider"
+  config:
+    devinPath: /absolute/path/to/devin
+    # Only swe-2-high is routable: the delegation path for ChatGPT must not
+    # reach other Devin models (account-default or otherwise).
+    models:
+      - id: swe-2-high
+        devinModel: "swe-2-high"
+        name: "Devin SWE-2 High"

@@ -1,0 +1,32 @@
+# dsh-mcp-gateway — vendored from
+# https://github.com/siddhartha-yz/dsh-mcp-gateway @ faf9606 (MIT, see LICENSE).
+# Local deltas are already applied in src/ — see gateway-local-changes.patch
+# for the delta record and upstream-resync notes.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsh-mcp-gateway"
+version = "0.1.0"
+description = "OAuth/MCP adapter that exposes DSH Harness capabilities to ChatGPT Web"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "siddhartha-yz" }]
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.scripts]
+dsh-mcp-gateway = "dsh_mcp_gateway.cli:main"
+
+[project.optional-dependencies]
+server = ["mcp==2.0.0"]
+dev = ["mcp==2.0.0", "ruff>=0.16,<1"]
+all = ["mcp==2.0.0"]
+
+[project.urls]
+Repository = "https://github.com/siddhartha-yz/dsh-mcp-gateway"
+Issues = "https://github.com/siddhartha-yz/dsh-mcp-gateway/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

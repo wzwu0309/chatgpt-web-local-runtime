@@ -1,0 +1,65 @@
+# Windows adaptation of the ChatGPT -> DSH bridge patch.
+# DSH plugin `name:` fields must be literal paths — <DSH_GW_HOME> is a
+# placeholder that start.ps1 substitutes with the real deployment directory
+# (forward slashes are valid in Node paths on Windows).
+- insert:
+    - id: chatgpt-task-state
+      name: <DSH_GW_HOME>/dsh-task-state-plugin/index.js
+
+    - id: chatgpt-remote-workers
+      name: <DSH_GW_HOME>/dsh-remote-worker-plugin/index.js
+      disabled: !!js process.platform === 'win32'
+      config:
+        publicBaseUrl: !!js process.env.DSH_MCP_PUBLIC_BASE_URL
+
+    - id: chatgpt-persistent-shell
+      name: cordis:group
+      group: true
+      isolate:
+        terminals: true
+      config:
+        - id: chatgpt-terminal-registry
+          name: '@deepseek-ai/dsh-terminal'
+
+        - id: chatgpt-terminal-bash
+          name: '@deepseek-ai/dsh-terminal-bash'
+          disabled: !!js process.platform === 'win32'
+          config:
+            timeoutMs: 300000
+
+        - id: chatgpt-shell-session-tool
+          name: <DSH_GW_HOME>/dsh-shell-session-plugin/index.js
+          disabled: !!js process.platform === 'win32'
+
+    # Optional Devin delegation — see devin/. Gated on DSH_DEVIN=1 so
+    # deployments without the devin provider plugin mount nothing.
+    - id: tool-subagent-devin
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js process.env.DSH_DEVIN !== '1'
+      config:
+        provider: spawn
+        toolName: subagent_devin
+        backgroundMode: one-shot
+        enableRunInBackground: false
+        agentOptions:
+          provider: devin
+          model: swe-2-high
+
+    - id: chatgpt-harness-bridge
+      name: <DSH_GW_HOME>/dsh-bridge-plugin/index.js
+      config:
+        allowExtraTools:
+          - task_state
+          - shell_session
+          - remote_machine
+          - remote_exec
+          - workspace_switch
+          - workspace_status
+          - subagent_devin
+          # On Windows the `standard` preset mounts `pwsh` instead of `bash`;
+          # allowlisting both is safe — absent names simply project nothing.
+          - pwsh
+
+# NOTE: deployed dsh-runtime predates sandbox-policy's additionalWritableRoots
+# config (exists only in newer source); unknown keys are stripped silently.
+# Out-of-workspace bash writes go through workspace_switch instead.
