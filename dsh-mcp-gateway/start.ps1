@@ -22,6 +22,7 @@ $DSH_HOME_DIR  = if ($env:DSH_HOME_DIR)  { $env:DSH_HOME_DIR }  else { "$GwHome\
 $DSH_HOST_PORT = if ($env:DSH_HOST_PORT) { $env:DSH_HOST_PORT } else { 3081 }
 $GATEWAY_PORT  = if ($env:GATEWAY_PORT)  { $env:GATEWAY_PORT }  else { 8766 }
 $WORKSPACE     = if ($env:WORKSPACE)     { $env:WORKSPACE }     else { "$env:USERPROFILE\data\workspace" }
+$WORKSPACE_ALLOWED_ROOT = if ($env:WORKSPACE_ALLOWED_ROOT) { $env:WORKSPACE_ALLOWED_ROOT } else { "$env:USERPROFILE\data" }
 $CLOUDFLARED   = if ($env:CLOUDFLARED)   { $env:CLOUDFLARED }   else { "$GwHome\bin\cloudflared.exe" }
 $DSH_BIN       = "$GwHome\deploy\dsh-runtime\node_modules\.bin\dsh.cmd"
 $PATCH_TMPL    = "$GwHome\deploy\dsh\chatgpt-bridge.windows.cordis.yml"
@@ -30,6 +31,9 @@ $LOG_DIR       = $env:TEMP
 
 if (-not $env:DSH_MCP_GATEWAY_ADMIN_PIN) {
     Write-Error 'env.conf must set DSH_MCP_GATEWAY_ADMIN_PIN'; exit 1
+}
+if (-not (Test-Path $WORKSPACE_ALLOWED_ROOT -PathType Container)) {
+    Write-Error "WORKSPACE_ALLOWED_ROOT '$WORKSPACE_ALLOWED_ROOT' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE_ALLOWED_ROOT') or set WORKSPACE_ALLOWED_ROOT in env.conf"; exit 1
 }
 
 # Materialize the patch: plugin `name:` fields need real absolute paths.
@@ -55,6 +59,7 @@ if (-not (Test-Bridge)) {
     $env:DSH_HOME = $DSH_HOME_DIR
     $env:DSH_TELEMETRY_DISABLED = '1'
     $env:DSH_MCP_PUBLIC_BASE_URL = if ($env:WORKER_PUBLIC_URL) { $env:WORKER_PUBLIC_URL } else { 'https://placeholder.invalid' }
+    $env:WORKSPACE_ALLOWED_ROOT = $WORKSPACE_ALLOWED_ROOT
     $env:PATH = "$(Split-Path $DSH_BIN);$env:PATH"
     Start-Process -FilePath $DSH_BIN -WindowStyle Hidden `
         -ArgumentList '--profile','web','--patch',$patchYml,'--host','127.0.0.1','--port',"$DSH_HOST_PORT",'--no-open' `

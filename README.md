@@ -128,28 +128,33 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
    [cloudflare.md](docs/en/cloudflare.md)), restarts the gateway.
 3. ChatGPT connector URL is permanent: `https://dsh-gw.<you>.workers.dev/mcp`.
    Re-auth = owner PIN from `env.conf`.
-4. In ChatGPT: `workspace_switch` moves the project root (limited to `~/data`),
+4. In ChatGPT: `workspace_switch` moves the project root (limited to the
+   allowed subtree, default `~/data`),
    `subagent_devin` delegates to Devin (pinned `swe-2-high`), file/shell tools
    work inside the sandbox boundary.
 
 ## Workspace
 
-ChatGPT operates on a **switchable workspace root**, not your whole disk —
-understand this before wondering why a tool can't see a path:
+ChatGPT operates on a **switchable workspace root**, not your whole disk.
+`~` below means your OS home directory (`C:\Users\<you>` on Windows).
 
-- The initial root is the launcher's working directory: `~/data/workspace`
-  on macOS, `%USERPROFILE%\data\workspace` on Windows (the `WORKSPACE`
-  env var overrides it).
-- `workspace_switch` retargets it, restricted to the **`~/data` subtree**
-  (`%USERPROFILE%\data` on Windows) — realpath-checked, symlink escapes
-  rejected. Keep the projects you want ChatGPT to touch under `~/data`;
-  switching to `~/data` itself widens the boundary to the whole subtree.
-- The selection persists across restarts in
-  `home/storages/chatgpt-bridge/active-workspace.json`;
-  `workspace_status` reports the active root.
-- Sandboxed `bash`/`pwsh` may write only inside the active root; the
-  read/write/edit file tools follow their own access model. If tools
-  report the wrong root, call `workspace_switch` again — or delete the
+- **`WORKSPACE` (env var) — the initial root.** Default:
+  `~/data/workspace` (the launcher's working directory). Change via the
+  `WORKSPACE` env var or a `WORKSPACE=<abs path>` line in `env.conf`.
+  Applies on first run or when no persisted selection exists.
+- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data`;
+  set it in `env.conf` to relocate the whole switchable boundary. The
+  resolved root must exist — a missing directory (default included) fails
+  the launch with a fix-it hint. `workspace_switch` may only retarget
+  inside this subtree — realpath-checked, symlink escapes rejected;
+  switching to the root itself widens the boundary to the whole subtree.
+- **Persistence:** `workspace_switch` selections are stored in
+  `home/storages/chatgpt-bridge/active-workspace.json` and survive
+  restarts — taking precedence over `WORKSPACE` (delete the file to fall
+  back to it). `workspace_status` reports the active root.
+- **Boundary:** sandboxed `bash`/`pwsh` writes stay inside the active
+  root; the read/write/edit file tools follow their own access model.
+  Wrong root after a restart? `workspace_switch` again — or delete the
   state file for a full reset (see architecture.md, Operations).
 
 ## Credits

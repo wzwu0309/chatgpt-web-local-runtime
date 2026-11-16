@@ -120,27 +120,32 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
    [cloudflare.md](docs/zh-CN/cloudflare.md))、重启 gateway。
 3. ChatGPT 连接器 URL 永久不变：`https://dsh-gw.<you>.workers.dev/mcp`。
    重新认证 = 用 `env.conf` 里的 owner PIN。
-4. 在 ChatGPT 里：`workspace_switch` 移动项目根（限定 `~/data` 子树），
+4. 在 ChatGPT 里：`workspace_switch` 移动项目根（限定允许子树，默认
+   `~/data`），
    `subagent_devin` 委派给 Devin（锁死 `swe-2-high`），文件/沙箱工具在
    沙箱边界内工作。
 
 ## 工作区
 
-ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁盘 —— 遇到
-"工具看不到某路径"之前先理解这条：
+ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁盘。下文的
+`~` 指系统 home 目录（Windows 上即 `C:\Users\<你>`）。
 
-- 初始根是启动器的工作目录：macOS 为 `~/data/workspace`,Windows 为
-  `%USERPROFILE%\data\workspace`(`WORKSPACE` 环境变量可改）。
-- `workspace_switch` 改变目标根，只允许 **`~/data` 子树**(Windows 下
-  即 `%USERPROFILE%\data`)—— realpath 校验，拒绝符号链接逃逸。想让
-  ChatGPT 碰的项目请放在 `~/data` 下；切到 `~/data` 本身则把边界放宽
-  到整个子树。
-- 选择持久化在
-  `home/storages/chatgpt-bridge/active-workspace.json`，重启不丢；
-  `workspace_status` 报告当前根。
-- 沙箱化的 `bash`/`pwsh` 只能写活动根以内；`read`/`write`/`edit` 文件
-  工具走自己的访问模型。工具报根不对时，再 `workspace_switch` 一次
-  —— 或者删掉该状态文件做全量重置（见 architecture.md 运维节）。
+- **`WORKSPACE`(环境变量)—— 初始根。** 默认 `~/data/workspace`
+  （启动器的工作目录）。用 `WORKSPACE` 环境变量或 env.conf 里
+  `WORKSPACE=<绝对路径>` 修改；在首次运行或无有效持久选择时生效。
+- **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data`;
+  在 env.conf 里改可将整个可切换边界移走。解析后的根必须存在
+  —— 目录缺失（含默认 `~/data` 缺失）时启动失败并给出修复提示。
+  `workspace_switch` 只允许切到该子树内(realpath 校验，拒绝符号
+  链接逃逸)；切到根本身则把边界放宽到整棵子树。
+- **持久化**:`workspace_switch` 的选择存在
+  `home/storages/chatgpt-bridge/active-workspace.json`，重启不丢，
+  且优先于 `WORKSPACE`（删该文件即回落）。`workspace_status` 报告
+  当前根。
+- **边界**：沙箱化的 `bash`/`pwsh` 只能写活动根以内；`read`/`write`/
+  `edit` 文件工具走自己的访问模型。重启后根不对就再
+  `workspace_switch` 一次，或删状态文件做全量重置（见
+  architecture.md 运维节）。
 
 密钥类内容（`env.conf`、`ADMIN_PIN.txt`、`state/`）由 `.gitignore` 挡在
 版本控制外——它们就生成在本目录里，但绝不入库。

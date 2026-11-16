@@ -71,8 +71,16 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 
 ## 工作区模型
 
-- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具，持久化到 `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json`（重启不丢）。
-- 允许子树：`~/data`(realpath 校验，拒绝符号链接逃逸）。允许切到 `~/data` 本身 → 整个子树都成为 bash 可写根。
+- `WORKSPACE`(env，默认 `~/data/workspace`)是 DSH host 的启动 cwd
+  —— 没有有效持久选择时的初始工作区根。它**不受**允许根约束
+  （运营者自有入口）；但 `workspace_switch` 一旦从界外的
+  `WORKSPACE` 切走，就无法通过该工具切回。
+- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具，持久化到 `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json`（重启不丢，后续运行优先于 `WORKSPACE`)。持久选择加载时会按允许子树重新校验 —— 越界或不存在的存储路径被丢弃，回落到启动 cwd。
+- `WORKSPACE_ALLOWED_ROOT`(env，默认 `~/data`)—— `workspace_switch`
+  可指向的子树。启动器透传给 DSH host；启动器与插件对解析后的根
+  （含默认路径）做存在性校验，缺失时拒绝启动并提示"创建目录或改配"
+  （realpath 校验，拒绝符号链接逃逸）。允许切到根本身 → 整个子树
+  都成为 bash 可写根。
 - 切换**不**修改会话（DSH `cwd` 是创建期元数据）；它退役旧 helper，并按新 cwd 惰性创建/复用 helper 会话。沙箱边界 = helper 会话 `cwd`。
 
 ## 安全模型

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { realpathSync, statSync } from 'node:fs'
 import { mkdir, open, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -21,8 +22,9 @@ const CAPABILITY_SESSION_PREFIX = 'dsh-mcp-gateway-chatgpt-capability'
 // Switchable workspace root. The bridge anchors every capability helper to
 // activeWorkspace() instead of the launch cwd so ChatGPT can retarget tool
 // execution via the workspace_switch tool. Persisted under DSH_HOME so the
-// selection survives host restarts; restricted to the ~/data subtree.
-const WORKSPACE_ALLOWED_ROOT = join(homedir(), 'data')
+// selection survives host restarts; targets are restricted to the allowed
+// root — ~/data by default, operator-configurable via config.allowedRoot.
+let workspaceAllowedRoot = join(homedir(), 'data')
 const WORKSPACE_STATE_FILE = process.env.DSH_CHATGPT_BRIDGE_WORKSPACE_STATE
   || (process.env.DSH_HOME
     ? join(process.env.DSH_HOME, 'storages', 'chatgpt-bridge', 'active-workspace.json')
@@ -58,9 +60,9 @@ async function resolveAllowedWorkspace(input) {
   const real = await realpath(resolve(expanded)).catch(() => {
     throw new Error(`path does not exist: ${expanded}`)
   })
-  const root = await realpath(WORKSPACE_ALLOWED_ROOT)
+  const root = await realpath(workspaceAllowedRoot)
   if (real !== root && !real.startsWith(root + sep)) {
-    throw new Error(`path must resolve inside ${WORKSPACE_ALLOWED_ROOT}: ${real}`)
+    throw new Error(`path must resolve inside ${workspaceAllowedRoot}: ${real}`)
   }
   if (!(await stat(real)).isDirectory()) {
     throw new Error(`not a directory: ${real}`)
@@ -313,6 +315,22 @@ async function readJson(req) {
 
 export function apply(ctx, config = {}) {
   const capabilityProfile = buildChatGPTCapabilityProfile(config)
+  const allowedRootInput = config.allowedRoot == null ? '' : String(config.allowedRoot).trim()
+  const resolvedRoot = allowedRootInput
+    ? resolve(allowedRootInput.replace(/^~(?=$|[\\/])/, homedir()))
+    : workspaceAllowedRoot
+  let real
+  try {
+    real = realpathSync.native(resolvedRoot)
+  } catch {
+    throw new Error(allowedRootInput
+      ? `dsh-chatgpt-bridge allowedRoot does not exist: ${resolvedRoot}`
+      : `dsh-chatgpt-bridge workspace root ${resolvedRoot} does not exist — create it or set WORKSPACE_ALLOWED_ROOT`)
+  }
+  if (!statSync(real).isDirectory()) {
+    throw new Error(`dsh-chatgpt-bridge allowedRoot is not a directory: ${real}`)
+  }
+  workspaceAllowedRoot = real
   const capabilityHandles = new Map()
   const instanceId = randomUUID()
   let toolRevision = 1
@@ -555,7 +573,7 @@ export function apply(ctx, config = {}) {
     output: { schema: {}, render: jsonRender },
     async execute() {
       await ensureWorkspaceLoaded()
-      return { workspace: activeWorkspace(), allowedRoot: WORKSPACE_ALLOWED_ROOT }
+      return { workspace: activeWorkspace(), allowedRoot: workspaceAllowedRoot }
     },
   }), 'chatgpt-bridge.workspace-status')
 

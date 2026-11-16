@@ -48,6 +48,7 @@
     - id: chatgpt-harness-bridge
       name: <DSH_GW_HOME>/dsh-bridge-plugin/index.js
       config:
+        allowedRoot: !!js process.env.WORKSPACE_ALLOWED_ROOT || ''
         allowExtraTools:
           - task_state
           - shell_session

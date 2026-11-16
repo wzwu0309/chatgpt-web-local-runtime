@@ -72,8 +72,13 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 
 ## Workspace model
 
-- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin, persisted to `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json` (survives restarts).
-- Allowed subtree: `~/data` (realpath-checked, symlink-escape rejected). Switching to `~/data` itself is allowed → whole subtree becomes the bash-writable root.
+- `WORKSPACE` (env, default `~/data/workspace`) is the DSH host's launch
+  cwd — the initial workspace root when no persisted selection exists. It
+  is **not** bound by the allowed root (operator's own entry point); but
+  once `workspace_switch` moves away from an out-of-bounds `WORKSPACE`,
+  there is no way back through the tool.
+- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin, persisted to `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json` (survives restarts; takes precedence over `WORKSPACE` on later runs). Persisted selections are re-validated against the allowed subtree on load — an out-of-bounds or missing stored path is discarded and the launch cwd is used instead.
+- `WORKSPACE_ALLOWED_ROOT` (env, default `~/data`) — the subtree `workspace_switch` may target. The launcher forwards it to the DSH host; both the launcher and the plugin refuse to start if the resolved root (default included) is missing, telling the operator to create it or reconfigure (realpath-checked, symlink-escape rejected). Switching to the root itself is allowed → whole subtree becomes the bash-writable root.
 - Switching does **not** mutate a session (DSH `cwd` is creation metadata); it retires the old helper and lazily creates/reuses a helper session keyed by the new cwd. Sandbox boundary = helper session `cwd`.
 
 ## Security model
