@@ -36,7 +36,7 @@ echo "[1/4] DSH web host :$DSH_HOST_PORT"
 if ! curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/null; then
   (cd "$WORKSPACE" && DSH_HOME="$DSH_HOME_DIR" DSH_TELEMETRY_DISABLED=1 \
     DSH_MCP_PUBLIC_BASE_URL="${WORKER_PUBLIC_URL:-https://placeholder.invalid}" \
-    DSH_DEVIN="${DSH_DEVIN:-}" \
+    DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}" \
     WORKSPACE_ALLOWED_ROOT="$WORKSPACE_ALLOWED_ROOT" \
     PATH="$(dirname "$DSH_BIN"):$PATH" \
     nohup "$DSH_BIN" --profile web --patch "$PATCH_YML" \

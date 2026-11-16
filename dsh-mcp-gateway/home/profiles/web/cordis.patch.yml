@@ -3,6 +3,6 @@
 # overrides, disables, and insert lists; `!!js` expressions allowed).
 #
 # Optional Devin provider/delegation: see devin/ — install the plugin,
-# append devin/cordis.patch.devin.yml here, and set DSH_DEVIN=1 in
+# append devin/cordis.patch.devin.yml here, and set DSH_SUBAGENT_DEVIN=1 in
 # env.conf to activate the gated subagent_devin entry in the bridge patch.
 []

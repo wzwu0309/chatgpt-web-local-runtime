@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 Optional Devin: `devin\README.md` inside the deployment home — merge the
 package snippet into `home\profiles\web\package.json`, append the patch
-rows, set `DSH_DEVIN=1`, re-run `start.ps1`.
+rows, set `DSH_SUBAGENT_DEVIN=1`, re-run `start.ps1`.
 
 Point the ChatGPT dev-mode connector at `$WORKER_PUBLIC_URL/mcp` and complete
 OAuth with the owner PIN.
@@ -72,7 +72,7 @@ OAuth with the owner PIN.
   emits `deploy/dsh/chatgpt-bridge.windows.resolved.cordis.yml` before
   launch — cordis `name:` fields must be literal, so the template ships a
   placeholder (forward slashes are fine for Node on Windows).
-- Child processes inherit the launcher environment, so `DSH_DEVIN=1` in
+- Child processes inherit the launcher environment, so `DSH_SUBAGENT_DEVIN=1` in
   env.conf reaches the DSH host naturally — no source/export quirk like macOS.
 - If your network blocks `*.workers.dev`, set `PROXY=` in env.conf —
   `curl.exe` ships with Windows 10+ and supports `--proxy`.

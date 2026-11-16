@@ -61,7 +61,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 - `chatgpt-task-state` — passive task records for ChatGPT (no loops).
 - `chatgpt-remote-workers` — remote worker edge (disabled on win32, inert w/o pollers).
 - `chatgpt-persistent-shell` group — terminal registry + `dsh-terminal-bash` backend + `shell_session` tool (persistent bash via PTY; POSIX only).
-- `tool-subagent-devin` — `dsh-tool-subagent` on `spawn` provider with `agentOptions: {provider: devin, model: swe-2-high}`: an in-process DSH child loop whose model is pinned. `modelSelection` defaults false → schema exposes only `{description, prompt}`; callers cannot choose a model. **Optional & env-gated** (`disabled: !!js process.env.DSH_DEVIN !== '1'`) — enable via `devin/`.
+- `tool-subagent-devin` — `dsh-tool-subagent` on `spawn` provider with `agentOptions: {provider: devin, model: swe-2-high}`: an in-process DSH child loop whose model is pinned. `modelSelection` defaults false → schema exposes only `{description, prompt}`; callers cannot choose a model. **Optional & env-gated** (`disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'`) — enable via `devin/`.
 - `chatgpt-harness-bridge` — the HTTP bridge itself + `allowExtraTools`.
 
 ### Gateway source changes (`gateway-local-changes.patch`)

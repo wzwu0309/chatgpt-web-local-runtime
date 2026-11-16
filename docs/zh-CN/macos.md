@@ -54,7 +54,7 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 ```
 
 可选 Devin：部署目录里的 `devin/README.md` —— 把 package 片段合并进
-`home/profiles/web/package.json`、追加 patch 行、设 `DSH_DEVIN=1`、
+`home/profiles/web/package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
 重跑 `./start.sh`。
 
 把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/mcp`，用 owner PIN
@@ -72,7 +72,7 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
   外发 curl（发布 upstream、健康检查）会走它。ChatGPT 从外部直连 Worker,
   不受影响。
 - `env.conf` 是 `source` 而非 export —— DSH host 需要的值必须在启动行
-  显式转发（这就是 `start.sh` 传 `DSH_DEVIN="${DSH_DEVIN:-}"` 的原因）。
+  显式转发（这就是 `start.sh` 传 `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"` 的原因）。
 - 日志：`/tmp/dsh-web-host.log`、`/tmp/cloudflared.log`、
   `/tmp/dsh-mcp-gateway.log`。健康检查：`GET /api/chatgpt-bridge/revision`。
 
@@ -84,5 +84,5 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
   `<DSH_GW_HOME>` 占位符，`start.sh` 启动前替换生成
   `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml`。
 - **工作区根**:`~/data`(bridge 经 `os.homedir()` 解析）。
-- **可选 Devin**:`devin/` + `DSH_DEVIN=1`;`devinPath` 写绝对路径
+- **可选 Devin**:`devin/` + `DSH_SUBAGENT_DEVIN=1`;`devinPath` 写绝对路径
   （如 `~/.local/bin/devin`),不依赖 PATH。

@@ -32,11 +32,11 @@
           name: <DSH_GW_HOME>/dsh-shell-session-plugin/index.js
           disabled: !!js process.platform === 'win32'
 
-    # Optional Devin delegation — see devin/. Gated on DSH_DEVIN=1 so
+    # Optional Devin delegation — see devin/. Gated on DSH_SUBAGENT_DEVIN=1 so
     # deployments without the devin provider plugin mount nothing.
     - id: tool-subagent-devin
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js process.env.DSH_DEVIN !== '1'
+      disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'
       config:
         provider: spawn
         toolName: subagent_devin

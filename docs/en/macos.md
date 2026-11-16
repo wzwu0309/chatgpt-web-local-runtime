@@ -55,7 +55,7 @@ $EDITOR env.conf               # fill secrets; point CLOUDFLARED at your
 
 Optional Devin: `devin/README.md` inside the deployment home — merge the
 package snippet into `home/profiles/web/package.json`, append the patch
-rows, set `DSH_DEVIN=1`, re-run `./start.sh`.
+rows, set `DSH_SUBAGENT_DEVIN=1`, re-run `./start.sh`.
 
 Point the ChatGPT dev-mode connector at `$WORKER_PUBLIC_URL/mcp` and complete
 OAuth with the owner PIN.
@@ -73,7 +73,7 @@ OAuth with the owner PIN.
   ChatGPT reaches the Worker from outside; unaffected.
 - `env.conf` is `source`d, not exported — values the DSH host needs must be
   forwarded explicitly on the launch line (this is why `start.sh` passes
-  `DSH_DEVIN="${DSH_DEVIN:-}"`).
+  `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"`).
 - Logs: `/tmp/dsh-web-host.log`, `/tmp/cloudflared.log`,
   `/tmp/dsh-mcp-gateway.log`. Health: `GET /api/chatgpt-bridge/revision`.
 
@@ -85,5 +85,5 @@ OAuth with the owner PIN.
   template uses `<DSH_GW_HOME>` placeholders; `start.sh` substitutes them
   into `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml` before launch.
 - **Workspace root**: `~/data` (the bridge resolves via `os.homedir()`).
-- **Optional Devin**: `devin/` + `DSH_DEVIN=1`; set `devinPath`
+- **Optional Devin**: `devin/` + `DSH_SUBAGENT_DEVIN=1`; set `devinPath`
   absolutely (e.g. `~/.local/bin/devin`) so PATH doesn't matter.

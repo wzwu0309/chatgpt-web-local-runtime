@@ -21,12 +21,12 @@ What enabling gives you:
    `pnpm install` (or `npm install`).
 2. Append `cordis.patch.devin.yml` to `home/profiles/web/cordis.patch.yml`
    and set `devinPath` to your Devin CLI binary.
-3. Add `DSH_DEVIN=1` to `env.conf` — the bridge patch's `tool-subagent-devin`
-   entry is gated on it (`disabled: !!js process.env.DSH_DEVIN !== '1'`).
+3. Add `DSH_SUBAGENT_DEVIN=1` to `env.conf` — the bridge patch's `tool-subagent-devin`
+   entry is gated on it (`disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'`).
 4. Re-run `start.sh` / `start.ps1`. `dsh_tool_catalog` should now list
    `subagent_devin`.
 
-Set `DSH_DEVIN=1` only **after** the plugin is installed — without the provider
+Set `DSH_SUBAGENT_DEVIN=1` only **after** the plugin is installed — without the provider
 the tool registers but every call fails at execution.
 
 ## Files

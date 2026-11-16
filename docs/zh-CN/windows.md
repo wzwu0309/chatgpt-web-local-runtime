@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 可选 Devin：部署目录里的 `devin\README.md` —— 把 package 片段合并进
-`home\profiles\web\package.json`、追加 patch 行、设 `DSH_DEVIN=1`、
+`home\profiles\web\package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
 重跑 `start.ps1`。
 
 把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/mcp`，用 owner PIN
@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
   `deploy/dsh/chatgpt-bridge.windows.resolved.cordis.yml` 再启动 —— cordis 的
   `name:` 必须是字面量，所以模板放占位符（正斜杠在 Windows 的 Node 里
   有效）。
-- 子进程继承启动器环境，env.conf 里的 `DSH_DEVIN=1` 自然到达 DSH
+- 子进程继承启动器环境，env.conf 里的 `DSH_SUBAGENT_DEVIN=1` 自然到达 DSH
   host —— 没有 macOS 那种 source/export 的坑。
 - 如果网络封了 `*.workers.dev`，在 env.conf 设 `PROXY=` —— Windows 10+
   自带 `curl.exe`，支持 `--proxy`。

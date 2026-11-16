@@ -60,7 +60,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 - `chatgpt-task-state` —— 给 ChatGPT 的被动任务记录（不含 loop)。
 - `chatgpt-remote-workers` —— 远程 worker 边缘（win32 禁用，无轮询者时空转）。
 - `chatgpt-persistent-shell` 组 —— 终端注册表 + `dsh-terminal-bash` 后端 + `shell_session` 工具（PTY 持久 bash；仅 POSIX)。
-- `tool-subagent-devin` —— `spawn` provider 上的 `dsh-tool-subagent`,`agentOptions: {provider: devin, model: swe-2-high}`：一个模型被钉死的进程内 DSH 子 loop。`modelSelection` 默认 false → schema 只暴露 `{description, prompt}`，调用方无法选模型。**可选且 env 门控**(`disabled: !!js process.env.DSH_DEVIN !== '1'`)—— 经 `devin/` 启用。
+- `tool-subagent-devin` —— `spawn` provider 上的 `dsh-tool-subagent`,`agentOptions: {provider: devin, model: swe-2-high}`：一个模型被钉死的进程内 DSH 子 loop。`modelSelection` 默认 false → schema 只暴露 `{description, prompt}`，调用方无法选模型。**可选且 env 门控**(`disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'`)—— 经 `devin/` 启用。
 - `chatgpt-harness-bridge` —— HTTP bridge 本体 + `allowExtraTools`。
 
 ### 网关源码改动（`gateway-local-changes.patch`)
