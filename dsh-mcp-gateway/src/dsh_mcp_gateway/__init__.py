@@ -22,6 +22,18 @@ except ImportError:  # pragma: no cover - optional server dependency
 __version__ = "0.1.0"
 
 
+def _session_id_from_context(ctx: Any) -> str | None:
+    """Conversation identity: ChatGPT sends a stable per-conversation
+    x-openai-session; mcp-session-id is the spec fallback other clients may
+    carry; ctx.session_id covers SDK-resolved sessions."""
+    session_id = None
+    request = getattr(getattr(ctx, "request_context", None), "request", None)
+    headers = getattr(request, "headers", None)
+    if headers:
+        session_id = headers.get("x-openai-session") or headers.get("mcp-session-id")
+    return session_id or getattr(ctx, "session_id", None)
+
+
 def build_mcp_server(
     harness_bridge: HarnessBridgeClient | None,
     *,
@@ -182,28 +194,21 @@ def build_mcp_server(
             to an unexpected project, call workspace_status to inspect the current root
             and workspace_switch to rebind before retrying.
             """
-            # Conversation identity for workspace_switch scoping: ChatGPT sends a
-            # stable per-conversation x-openai-session; mcp-session-id is the spec
-            # fallback other clients may carry; ctx.session_id covers SDK sessions.
-            session_id = None
-            request = getattr(getattr(ctx, "request_context", None), "request", None)
-            headers = getattr(request, "headers", None)
-            if headers:
-                session_id = headers.get("x-openai-session") or headers.get("mcp-session-id")
-            session_id = session_id or getattr(ctx, "session_id", None)
+            session_id = _session_id_from_context(ctx)
             print(f"dsh_tool_call session={(session_id or '-')[:32]} name={name}", flush=True)
             return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
 
         @mcp.tool(name="dsh_skill_catalog", annotations=read_only)
-        def dsh_skill_catalog() -> dict[str, Any]:
-            """List model-invocable skills from DSH's native SkillRegistry for the Harness workspace."""
-            skills = harness_bridge.skills()
+        def dsh_skill_catalog(ctx: Context = None) -> dict[str, Any]:
+            """List model-invocable skills from DSH's native SkillRegistry for the calling
+            conversation's bound workspace."""
+            skills = harness_bridge.skills(session_id=_session_id_from_context(ctx))
             return {"skills": skills, "count": len(skills)}
 
         @mcp.tool(name="dsh_skill_load", annotations=read_only)
-        def dsh_skill_load(name: str) -> dict[str, Any]:
+        def dsh_skill_load(name: str, ctx: Context = None) -> dict[str, Any]:
             """Load one DSH community skill's instructions through the native SkillRegistry."""
-            return {"skill": harness_bridge.load_skill(name)}
+            return {"skill": harness_bridge.load_skill(name, session_id=_session_id_from_context(ctx))}
 
     return mcp
 

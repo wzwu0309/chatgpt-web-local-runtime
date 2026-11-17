@@ -29,9 +29,9 @@ let workspaceAllowedRoot = join(homedir(), 'data')
 let currentWorkspace = process.cwd()
 let workspaceLoaded = null
 
-// Workspace resolution for one /call: the calling session's binding (set by
-// workspace_switch) wins; otherwise the shared default (currentWorkspace).
-// Both layers persist under DSH_HOME — the session id is an opaque
+// Workspace resolution for one request: the calling session's binding (set by
+// workspace_switch, persisted to session-workspaces.json) wins; otherwise the
+// launch root (currentWorkspace). The session id is an opaque
 // conversation-scoped token forwarded by the gateway, stable across restarts.
 const callContext = new AsyncLocalStorage()
 const sessionWorkspaces = new Map()
@@ -47,6 +47,12 @@ function activeWorkspace() {
 
 function sessionIdOfCall() {
   return callContext.getStore()?.sessionId ?? null
+}
+
+function sessionIdOf(payload) {
+  return typeof payload?.sessionId === 'string' && payload.sessionId.trim()
+    ? payload.sessionId.trim().slice(0, 256)
+    : null
 }
 
 function activeWorkspaceFor(sessionId) {
@@ -712,9 +718,13 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: `${PREFIX}/skills`,
-    handler: async (_req, res) => {
+    handler: async (req, res) => {
       try {
-        const { skillOptions } = await standingLookup()
+        const payload = req.method === 'POST' ? await readJson(req) : null
+        const { skillOptions } = await callContext.run(
+          { sessionId: sessionIdOf(payload) },
+          () => standingLookup(),
+        )
         const skills = await ctx.skills.list(skillOptions)
         json(res, 200, {
           skills: skills
@@ -749,7 +759,10 @@ export function apply(ctx, config = {}) {
           json(res, 400, { error: 'invalid_request', message: 'name must be a non-empty string' })
           return
         }
-        const { skillOptions } = await standingLookup()
+        const { skillOptions } = await callContext.run(
+          { sessionId: sessionIdOf(payload) },
+          () => standingLookup(),
+        )
         const summary = (await ctx.skills.list(skillOptions)).find(skill => skill.name === skillName)
         if (!summary || summary.invocation?.modelInvocable !== true) {
           json(res, 404, { error: 'skill_unavailable', message: `skill "${skillName}" is unavailable for model invocation` })
@@ -799,9 +812,7 @@ export function apply(ctx, config = {}) {
         if (typeof toolArguments !== 'object' || toolArguments === null || Array.isArray(toolArguments)) {
           throw new BridgeRequestError(400, 'invalid_request', 'arguments must be an object when supplied')
         }
-        const sessionId = typeof payload.sessionId === 'string' && payload.sessionId.trim()
-          ? payload.sessionId.trim().slice(0, 256)
-          : null
+        const sessionId = sessionIdOf(payload)
         await assertExternalToolAvailable(toolName)
         capability = await awaitWithinToolCallLifetime(
           callContext.run({ sessionId }, () => acquireCapabilityAgent(lifetime.signal)),
