@@ -12,7 +12,6 @@ CONF="$GW_HOME/env.conf"
 DSH_HOME_DIR="${DSH_HOME_DIR:-$GW_HOME/home}"
 DSH_HOST_PORT="${DSH_HOST_PORT:-3081}"
 GATEWAY_PORT="${GATEWAY_PORT:-8766}"
-WORKSPACE="${WORKSPACE:-$HOME/data/workspace}"
 WORKSPACE_ALLOWED_ROOT="${WORKSPACE_ALLOWED_ROOT:-$HOME/data}"
 CLOUDFLARED="${CLOUDFLARED:-$GW_HOME/bin/cloudflared}"
 DSH_BIN="$GW_HOME/deploy/dsh-runtime/node_modules/.bin/dsh"
@@ -31,9 +30,15 @@ if [ ! -d "$WORKSPACE_ALLOWED_ROOT" ]; then
   echo "Create it (mkdir -p \"$WORKSPACE_ALLOWED_ROOT\") or set WORKSPACE_ALLOWED_ROOT in env.conf." >&2
   exit 1
 fi
-if [ ! -d "$WORKSPACE" ]; then
-  echo "WORKSPACE '$WORKSPACE' does not exist." >&2
-  echo "Create it (mkdir -p \"$WORKSPACE\") or set WORKSPACE in env.conf." >&2
+WORKSPACE="${WORKSPACE:-$WORKSPACE_ALLOWED_ROOT/default}"
+if [ -e "$WORKSPACE" ] && [ ! -d "$WORKSPACE" ]; then
+  echo "WORKSPACE '$WORKSPACE' exists but is not a directory." >&2
+  echo "Remove it or set WORKSPACE in env.conf to another path." >&2
+  exit 1
+fi
+if ! mkdir -p "$WORKSPACE" 2>/dev/null; then
+  echo "WORKSPACE '$WORKSPACE' could not be created." >&2
+  echo "Check permissions or set WORKSPACE in env.conf." >&2
   exit 1
 fi
 

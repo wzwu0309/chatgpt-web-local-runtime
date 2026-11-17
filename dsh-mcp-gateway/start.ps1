@@ -21,7 +21,6 @@ $GwHome        = $PSScriptRoot
 $DSH_HOME_DIR  = if ($env:DSH_HOME_DIR)  { $env:DSH_HOME_DIR }  else { "$GwHome\home" }
 $DSH_HOST_PORT = if ($env:DSH_HOST_PORT) { $env:DSH_HOST_PORT } else { 3081 }
 $GATEWAY_PORT  = if ($env:GATEWAY_PORT)  { $env:GATEWAY_PORT }  else { 8766 }
-$WORKSPACE     = if ($env:WORKSPACE)     { $env:WORKSPACE }     else { "$env:USERPROFILE\data\workspace" }
 $WORKSPACE_ALLOWED_ROOT = if ($env:WORKSPACE_ALLOWED_ROOT) { $env:WORKSPACE_ALLOWED_ROOT } else { "$env:USERPROFILE\data" }
 $CLOUDFLARED   = if ($env:CLOUDFLARED)   { $env:CLOUDFLARED }   else { "$GwHome\bin\cloudflared.exe" }
 $DSH_BIN       = "$GwHome\deploy\dsh-runtime\node_modules\.bin\dsh.cmd"
@@ -35,8 +34,12 @@ if (-not $env:DSH_MCP_GATEWAY_ADMIN_PIN) {
 if (-not (Test-Path $WORKSPACE_ALLOWED_ROOT -PathType Container)) {
     Write-Error "WORKSPACE_ALLOWED_ROOT '$WORKSPACE_ALLOWED_ROOT' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE_ALLOWED_ROOT') or set WORKSPACE_ALLOWED_ROOT in env.conf"; exit 1
 }
-if (-not (Test-Path $WORKSPACE -PathType Container)) {
-    Write-Error "WORKSPACE '$WORKSPACE' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE') or set WORKSPACE in env.conf"; exit 1
+$WORKSPACE = if ($env:WORKSPACE) { $env:WORKSPACE } else { Join-Path $WORKSPACE_ALLOWED_ROOT 'default' }
+if ((Test-Path $WORKSPACE) -and -not (Test-Path $WORKSPACE -PathType Container)) {
+    Write-Error "WORKSPACE '$WORKSPACE' exists but is not a directory - remove it or set WORKSPACE in env.conf"; exit 1
+}
+try { New-Item -ItemType Directory -Force $WORKSPACE | Out-Null } catch {
+    Write-Error "WORKSPACE '$WORKSPACE' could not be created - check permissions or set WORKSPACE in env.conf"; exit 1
 }
 
 # Materialize the patch: plugin `name:` fields need real absolute paths.

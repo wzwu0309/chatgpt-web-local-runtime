@@ -72,11 +72,14 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 
 ## Workspace model
 
-- `WORKSPACE` (env, default `~/data/workspace`) is the DSH host's launch
-  cwd — the fallback workspace root for calls without a conversation
-  binding. It is **not** bound by the allowed root (operator's own entry
-  point); but once `workspace_switch` moves away from an out-of-bounds
-  `WORKSPACE`, there is no way back through the tool.
+- `WORKSPACE` (env, default `<WORKSPACE_ALLOWED_ROOT>/default`, i.e.
+  `~/data/default` out of the box) is the DSH host's launch cwd — the
+  fallback workspace root for calls without a conversation binding. The
+  launcher creates it when missing; an existing non-directory path fails
+  the launch instead. It is **not** bound by the allowed root
+  (operator's own entry point); but once `workspace_switch` moves away
+  from an out-of-bounds `WORKSPACE`, there is no way back through the
+  tool.
 - `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin. Switching binds only the calling conversation: the gateway forwards `x-openai-session` (ChatGPT's per-conversation header; `mcp-session-id` is the fallback for other clients) as `sessionId`, and the bridge keeps a session-keyed map persisted to `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` — concurrent conversations hold independent roots inside the allowed subtree, surviving restarts; calls without an identity share the launch root (`WORKSPACE` env). Persisted session entries are re-validated against the allowed subtree on load — out-of-bounds or missing paths are dropped; the map is capped at 256 bindings. A no-identity `workspace_switch` updates only the in-memory default for the process lifetime.
 - `WORKSPACE_ALLOWED_ROOT` (env, default `~/data`) — the subtree `workspace_switch` may target. The launcher forwards it to the DSH host; both the launcher and the plugin refuse to start if the resolved root (default included) is missing, telling the operator to create it or reconfigure (realpath-checked, symlink-escape rejected). Switching to the root itself is allowed → whole subtree becomes the bash-writable root.
 - Switching does **not** mutate a session (DSH `cwd` is creation metadata); it retires the old helper and lazily creates/reuses a helper session keyed by the new cwd. Sandbox boundary = helper session `cwd`.
