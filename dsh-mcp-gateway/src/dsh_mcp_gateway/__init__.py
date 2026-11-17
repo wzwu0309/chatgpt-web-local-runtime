@@ -190,9 +190,9 @@ def build_mcp_server(
             `command` and `description`. Missing or misnamed required properties are rejected
             before execution.
 
-            Calls run under the calling conversation's bound workspace. If paths resolve
-            to an unexpected project, call workspace_status to inspect the current root
-            and workspace_switch to rebind before retrying.
+            Calls run under this conversation's workspace binding — the launch
+            default until changed via workspace_switch, which then persists for
+            the whole conversation.
             """
             session_id = _session_id_from_context(ctx)
             print(f"dsh_tool_call session={(session_id or '-')[:32]} name={name}", flush=True)

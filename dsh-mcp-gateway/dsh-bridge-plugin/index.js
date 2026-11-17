@@ -618,9 +618,8 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register({
     name: 'workspace_status',
     description: [
-      'Report the DSH workspace root that subsequent tool calls execute under.',
-      'If it is not the project you expect, call workspace_switch to bind this conversation to the right directory.',
-      'Allowed roots live under the operator-configured data tree.',
+      'Report the workspace root that subsequent tool calls execute under,',
+      'plus how it was set (conversation binding or launch default).',
     ].join(' '),
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: { schema: {}, render: jsonRender },
@@ -637,17 +636,15 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register({
     name: 'workspace_switch',
     description: [
-      'Switch the DSH workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary).',
-      'The switch binds the calling conversation only and persists until it switches again; other conversations keep their own workspace.',
-      'path may use ~; it must resolve to an existing directory under the allowed data root.',
-      'Use workspace_status to see the current root.',
+      'Bind this conversation to a new workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary).',
+      'The binding persists for the whole conversation; the response reports the new root.',
     ].join(' '),
     parameters: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Absolute or ~-relative path of the new workspace root.',
+          description: 'Absolute or ~-relative path of the new workspace root; must resolve to an existing directory under the allowed root.',
         },
       },
       required: ['path'],
