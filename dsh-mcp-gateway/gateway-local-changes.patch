@@ -4,10 +4,46 @@
 # To resync with upstream: diff upstream src/ against this directory,
 # re-apply these deltas, and bump the commit noted in pyproject.toml.
 diff --git a/src/dsh_mcp_gateway/__init__.py b/src/dsh_mcp_gateway/__init__.py
-index 736c206..d686eeb 100644
+index 736c206..3ab30a5 100644
 --- a/src/dsh_mcp_gateway/__init__.py
 +++ b/src/dsh_mcp_gateway/__init__.py
-@@ -116,7 +116,10 @@ def build_mcp_server(
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import logging
+ from contextlib import asynccontextmanager, suppress
+ from typing import Any
+ 
+@@ -14,8 +15,27 @@ from .harness_bridge import (
+ )
+ from .mcp_compat import disable_modern_subscriptions
+ 
++try:  # resolved lazily via get_type_hints; only the MCP server path dereferences it
++    from mcp.server.mcpserver.context import Context
++except ImportError:  # pragma: no cover - optional server dependency
++    Context = None
++
+ __version__ = "0.1.0"
+ 
++_exec_log = logging.getLogger("dsh_mcp_gateway")
++
++
++def _session_id_from_context(ctx: Any) -> str | None:
++    """Conversation identity: ChatGPT sends a stable per-conversation
++    x-openai-session; mcp-session-id is the spec fallback other clients may
++    carry; ctx.session_id covers SDK-resolved sessions."""
++    session_id = None
++    request = getattr(getattr(ctx, "request_context", None), "request", None)
++    headers = getattr(request, "headers", None)
++    if headers:
++        session_id = headers.get("x-openai-session") or headers.get("mcp-session-id")
++    return session_id or getattr(ctx, "session_id", None)
++
+ 
+ def build_mcp_server(
+     harness_bridge: HarnessBridgeClient | None,
+@@ -116,7 +136,10 @@ def build_mcp_server(
          "DSH is the harness authority and ChatGPT is the reasoning agent. The stable meta-tools "
          "dsh_tool_catalog/dsh_tool_call and dsh_skill_catalog/dsh_skill_load are the correctness path for DSH "
          "community extensions: use them to discover and invoke capabilities even if the ChatGPT client keeps a "
@@ -19,7 +55,7 @@ index 736c206..d686eeb 100644
          + (
              " This server also projects compatible DSH ToolRuntime capabilities as first-class MCP tools as an "
              "explicit optional UX mode; extension availability must not depend on that projection."
-@@ -150,11 +153,26 @@ def build_mcp_server(
+@@ -150,23 +173,45 @@ def build_mcp_server(
          def dsh_tool_catalog() -> dict[str, Any]:
              """List the current DSH ToolRuntime schemas exposed by installed DSH plugins."""
              tools = harness_bridge.tools()
@@ -35,8 +71,10 @@ index 736c206..d686eeb 100644
 +            }
  
          @mcp.tool(name="dsh_tool_call", annotations=consequential_control)
-         def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None) -> Any:
+-        def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None) -> Any:
 -            """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline."""
+-            return tool_result_to_mcp(harness_bridge.call(name, arguments))
++        def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None, ctx: Context = None) -> Any:
 +            """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline.
 +
 +            `arguments` must satisfy the target tool's schema from dsh_tool_catalog — include
@@ -44,15 +82,49 @@ index 736c206..d686eeb 100644
 +            parameters.properties: read/write/edit take `file_path` (not `path`), bash takes
 +            `command` and `description`. Missing or misnamed required properties are rejected
 +            before execution.
++
++            Calls run under this conversation's workspace binding — the launch
++            default until changed via workspace_switch, which then persists for
++            the whole conversation.
 +            """
-             return tool_result_to_mcp(harness_bridge.call(name, arguments))
++            session_id = _session_id_from_context(ctx)
++            _exec_log.info("dsh_tool_call session=%s name=%s", (session_id or '-')[:32], name)
++            return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
  
          @mcp.tool(name="dsh_skill_catalog", annotations=read_only)
+-        def dsh_skill_catalog() -> dict[str, Any]:
+-            """List model-invocable skills from DSH's native SkillRegistry for the Harness workspace."""
+-            skills = harness_bridge.skills()
++        def dsh_skill_catalog(ctx: Context = None) -> dict[str, Any]:
++            """List model-invocable skills from DSH's native SkillRegistry for the calling
++            conversation's bound workspace."""
++            skills = harness_bridge.skills(session_id=_session_id_from_context(ctx))
+             return {"skills": skills, "count": len(skills)}
+ 
+         @mcp.tool(name="dsh_skill_load", annotations=read_only)
+-        def dsh_skill_load(name: str) -> dict[str, Any]:
++        def dsh_skill_load(name: str, ctx: Context = None) -> dict[str, Any]:
+             """Load one DSH community skill's instructions through the native SkillRegistry."""
+-            return {"skill": harness_bridge.load_skill(name)}
++            return {"skill": harness_bridge.load_skill(name, session_id=_session_id_from_context(ctx))}
+ 
+     return mcp
+ 
 diff --git a/src/dsh_mcp_gateway/cli.py b/src/dsh_mcp_gateway/cli.py
-index 90bde6b..beabe9c 100644
+index 90bde6b..03769ae 100644
 --- a/src/dsh_mcp_gateway/cli.py
 +++ b/src/dsh_mcp_gateway/cli.py
-@@ -13,7 +13,7 @@ from .harness_bridge import HarnessBridgeClient
+@@ -3,7 +3,9 @@ from __future__ import annotations
+ import argparse
+ import asyncio
+ import ipaddress
++import logging
+ import os
++import tempfile
+ from collections.abc import Sequence
+ from pathlib import Path
+ from urllib.parse import urlparse
+@@ -13,7 +15,7 @@ from .harness_bridge import HarnessBridgeClient
  from .remote_worker_edge import install_remote_worker_routes
  
  
@@ -61,7 +133,7 @@ index 90bde6b..beabe9c 100644
      """Build the DNS-rebinding allowlist for one validated public HTTPS origin."""
      from mcp.server.transport_security import TransportSecuritySettings
  
-@@ -42,6 +42,7 @@ def build_transport_security(public_base: str):
+@@ -42,6 +44,7 @@ def build_transport_security(public_base: str):
          "127.0.0.1:*",
          "localhost:*",
          "[::1]:*",
@@ -69,7 +141,7 @@ index 90bde6b..beabe9c 100644
      ]
      allowed_origins = [canonical_public_base, f"https://{normalized_authority}"]
      if public_port in {None, 443}:
-@@ -123,6 +124,17 @@ def build_parser() -> argparse.ArgumentParser:
+@@ -123,6 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
          required=True,
          help="Public HTTPS origin used as OAuth issuer, for example https://gateway.example.com.",
      )
@@ -87,7 +159,7 @@ index 90bde6b..beabe9c 100644
      parser.add_argument(
          "--state-dir",
          default=".dsh-mcp-gateway",
-@@ -204,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
+@@ -204,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
      try:
          from .oauth import EmbeddedOAuthConfig
  
@@ -96,6 +168,169 @@ index 90bde6b..beabe9c 100644
      except ImportError as exc:
          raise SystemExit("install dsh-mcp-gateway[server] to run the HTTP/OAuth gateway") from exc
  
+@@ -223,6 +237,15 @@ def main(argv: Sequence[str] | None = None) -> int:
+         max_client_metadata_bytes=args.max_client_metadata_bytes,
+         max_registration_request_bytes=args.max_registration_request_bytes,
+     )
++    import uvicorn
++
++    # Per-request access lines and dsh_tool_call markers are execution traffic:
++    # they go to one bounded file the process owns. stdout/stderr stays
++    # launch-level and the launcher truncates it on every start.
++    exec_log = Path(
++        os.environ.get("DSH_MCP_GATEWAY_EXEC_LOG")
++        or (Path(tempfile.gettempdir()) if os.name == "nt" else Path("/tmp")) / "dsh-mcp-gateway.log"
++    )
+     server, _provider = build_embedded_oauth_server(
+         harness_bridge,
+         oauth,
+@@ -237,16 +260,85 @@ def main(argv: Sequence[str] | None = None) -> int:
+     )
+     print(f"MCP gateway listening on http://{args.bind_host}:{args.port}/mcp")
+     print(f"OAuth issuer: {oauth.issuer_url}")
+-    server.run(
+-        transport="streamable-http",
+-        host=args.bind_host,
+-        port=args.port,
++    print(f"Execution log: {exec_log} (bounded to 8 MiB)", flush=True)
++    app = server.streamable_http_app(
+         streamable_http_path="/mcp",
+         json_response=True,
+         transport_security=transport_security,
++        host=args.bind_host,
+     )
++    uvicorn_config = uvicorn.Config(
++        app,
++        host=args.bind_host,
++        port=args.port,
++        log_level="info",
++        log_config=_execution_log_config(exec_log),
++    )
++    uvicorn.Server(uvicorn_config).run()
+     return 0
+ 
+ 
++class _BoundedFileHandler(logging.FileHandler):
++    """Append-only log file that drops its oldest half when it exceeds
++    `max_bytes`, so a single file stays bounded without rotations."""
++
++    def __init__(self, filename: str, max_bytes: int, **kwargs) -> None:
++        self._max_bytes = max_bytes
++        super().__init__(filename, **kwargs)
++
++    def emit(self, record: logging.LogRecord) -> None:
++        super().emit(record)
++        if os.path.getsize(self.baseFilename) <= self._max_bytes:
++            return
++        self.stream.close()
++        keep = self._max_bytes // 2
++        marker = b"... older lines dropped ...\n"
++        with open(self.baseFilename, "rb+") as raw:
++            raw.seek(-keep, os.SEEK_END)
++            tail = raw.read()
++            nl = tail.find(b"\n")
++            tail = tail[nl + 1 :] if nl != -1 else b""
++            raw.seek(0)
++            raw.write(marker + tail)
++            raw.truncate()
++        self.stream = self._open()
++
++
++def _execution_log_config(log_path: Path) -> dict:
++    """uvicorn log_config that routes execution traffic to a single bounded
++    file and keeps only startup/error lines on the console stream."""
++    return {
++        "version": 1,
++        "disable_existing_loggers": False,
++        "formatters": {
++            "plain": {
++                "()": "uvicorn.logging.DefaultFormatter",
++                "use_colors": False,
++            },
++        },
++        "handlers": {
++            "exec_file": {
++                "()": "dsh_mcp_gateway.cli._BoundedFileHandler",
++                "filename": str(log_path),
++                "max_bytes": 8 * 1024 * 1024,
++                "encoding": "utf-8",
++                "formatter": "plain",
++            },
++            "console": {
++                "class": "logging.StreamHandler",
++                "stream": "ext://sys.stderr",
++                "formatter": "plain",
++            },
++        },
++        "loggers": {
++            "uvicorn": {"handlers": ["exec_file", "console"], "level": "INFO", "propagate": False},
++            "uvicorn.error": {"handlers": ["exec_file", "console"], "level": "INFO", "propagate": False},
++            "uvicorn.access": {"handlers": ["exec_file"], "level": "INFO", "propagate": False},
++            "dsh_mcp_gateway": {"handlers": ["exec_file"], "level": "INFO", "propagate": False},
++        },
++        "root": {"handlers": ["console"], "level": "WARNING"},
++    }
++
++
+ if __name__ == "__main__":
+     raise SystemExit(main())
+diff --git a/src/dsh_mcp_gateway/harness_bridge.py b/src/dsh_mcp_gateway/harness_bridge.py
+index 77f6f56..57cb969 100644
+--- a/src/dsh_mcp_gateway/harness_bridge.py
++++ b/src/dsh_mcp_gateway/harness_bridge.py
+@@ -402,31 +402,46 @@ class HarnessBridgeClient:
+             raise HarnessBridgeError("DSH bridge returned an invalid tool catalog")
+         return [dict(_validated_tool_schema(item)) for item in tools]
+ 
+-    def skills(self) -> list[dict[str, Any]]:
+-        payload = self._request("/api/chatgpt-bridge/skills")
++    def skills(self, *, session_id: str | None = None) -> list[dict[str, Any]]:
++        payload = self._request(
++            "/api/chatgpt-bridge/skills",
++            payload={"sessionId": session_id} if session_id else None,
++        )
+         skills = payload.get("skills")
+         if not isinstance(skills, list) or not all(isinstance(item, dict) for item in skills):
+             raise HarnessBridgeError("DSH bridge returned an invalid skill catalog")
+         return [dict(_validated_skill(item, require_content=False)) for item in skills]
+ 
+-    def load_skill(self, name: str) -> dict[str, Any]:
++    def load_skill(self, name: str, *, session_id: str | None = None) -> dict[str, Any]:
+         if not name.strip():
+             raise ValueError("name must be non-empty")
+-        payload = self._request("/api/chatgpt-bridge/skill", payload={"name": name})
++        body: dict[str, Any] = {"name": name}
++        if session_id:
++            body["sessionId"] = session_id
++        payload = self._request("/api/chatgpt-bridge/skill", payload=body)
+         skill = payload.get("skill")
+         if not isinstance(skill, dict):
+             raise HarnessBridgeError("DSH bridge returned an invalid skill definition")
+         return dict(_validated_skill(skill, require_content=True))
+ 
+-    def call(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
++    def call(
++        self,
++        name: str,
++        arguments: dict[str, Any] | None = None,
++        *,
++        session_id: str | None = None,
++    ) -> dict[str, Any]:
+         if not name.strip():
+             raise ValueError("name must be non-empty")
+         if arguments is not None and not isinstance(arguments, dict):
+             raise ValueError("arguments must be an object when supplied")
++        payload: dict[str, Any] = {"name": name, "arguments": arguments or {}}
++        if session_id:
++            payload["sessionId"] = session_id
+         return _validated_tool_result(
+             self._request(
+                 "/api/chatgpt-bridge/call",
+-                payload={"name": name, "arguments": arguments or {}},
++                payload=payload,
+                 timeout_s=self.tool_call_timeout_s,
+             )
+         )
 diff --git a/src/dsh_mcp_gateway/oauth.py b/src/dsh_mcp_gateway/oauth.py
 index 85a5f38..c67676b 100644
 --- a/src/dsh_mcp_gateway/oauth.py
