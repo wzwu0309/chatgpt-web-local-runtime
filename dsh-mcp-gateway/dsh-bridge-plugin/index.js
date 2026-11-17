@@ -23,8 +23,8 @@ const CAPABILITY_SESSION_PREFIX = 'dsh-mcp-gateway-chatgpt-capability'
 // Switchable workspace root. The bridge anchors every capability helper to
 // activeWorkspace() instead of the launch cwd so ChatGPT can retarget tool
 // execution via the workspace_switch tool. Targets are restricted to the
-// allowed root — ~/data by default, operator-configurable via config.allowedRoot.
-let workspaceAllowedRoot = join(homedir(), 'data')
+// allowed root — ~/data/workspace by default, operator-configurable via config.allowedRoot.
+let workspaceAllowedRoot = join(homedir(), 'data', 'workspace')
 
 let currentWorkspace = process.cwd()
 let workspaceLoaded = null

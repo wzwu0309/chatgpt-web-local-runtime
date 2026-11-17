@@ -121,7 +121,7 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
 3. ChatGPT 连接器 URL 永久不变：`https://dsh-gw.<you>.workers.dev/mcp`。
    重新认证 = 用 `env.conf` 里的 owner PIN。
 4. 在 ChatGPT 里：`workspace_switch` 移动项目根（限定允许子树，默认
-   `~/data`），
+   `~/data/workspace`），
    `subagent_devin` 委派给 Devin（锁死 `swe-2-high`），文件/沙箱工具在
    沙箱边界内工作。
 
@@ -131,14 +131,14 @@ ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁�
 `~` 指系统 home 目录（Windows 上即 `C:\Users\<你>`）。
 
 - **`WORKSPACE`(环境变量)—— 回落根。** 默认
-  `<WORKSPACE_ALLOWED_ROOT>/default`（开箱即 `~/data/default`,启动器
+  `<WORKSPACE_ALLOWED_ROOT>/default`（开箱即 `~/data/workspace/default`，启动器
   的工作目录）。用 `WORKSPACE` 环境变量或 env.conf 里
   `WORKSPACE=<绝对路径>` 修改；无绑定的会话和无身份调用落在这里；
   目录缺失时自动创建，若同名位置已有非目录文件则启动失败并给出修复
   提示。
-- **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data`;
+- **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data/workspace`;
   在 env.conf 里改可将整个可切换边界移走。解析后的根必须存在
-  —— 目录缺失（含默认 `~/data` 缺失）时启动失败并给出修复提示。
+  —— 目录缺失（含默认 `~/data/workspace` 缺失）时启动失败并给出修复提示。
   `workspace_switch` 只允许切到该子树内(realpath 校验，拒绝符号
   链接逃逸)；切到根本身则把边界放宽到整棵子树。
 - **持久化**:`workspace_switch` 只绑定发起调用的 conversation

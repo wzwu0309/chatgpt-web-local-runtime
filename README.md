@@ -129,7 +129,7 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
 3. ChatGPT connector URL is permanent: `https://dsh-gw.<you>.workers.dev/mcp`.
    Re-auth = owner PIN from `env.conf`.
 4. In ChatGPT: `workspace_switch` moves the project root (limited to the
-   allowed subtree, default `~/data`),
+   allowed subtree, default `~/data/workspace`),
    `subagent_devin` delegates to Devin (pinned `swe-2-high`), file/shell tools
    work inside the sandbox boundary.
 
@@ -139,13 +139,13 @@ ChatGPT operates on a **switchable workspace root**, not your whole disk.
 `~` below means your OS home directory (`C:\Users\<you>` on Windows).
 
 - **`WORKSPACE` (env var) — the fallback root.** Default:
-  `<WORKSPACE_ALLOWED_ROOT>/default` (`~/data/default` out of the box —
+  `<WORKSPACE_ALLOWED_ROOT>/default` (`~/data/workspace/default` out of the box —
   the launcher's working directory). Change via the `WORKSPACE` env var
   or a `WORKSPACE=<abs path>` line in `env.conf`. Conversations without a
   binding, and calls without an identity, run here; the directory is
   created automatically when missing, while an existing non-directory
   path fails the launch with a fix-it hint.
-- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data`;
+- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data/workspace`;
   set it in `env.conf` to relocate the whole switchable boundary. The
   resolved root must exist — a missing directory (default included) fails
   the launch with a fix-it hint. `workspace_switch` may only retarget

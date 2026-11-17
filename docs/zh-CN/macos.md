@@ -83,6 +83,6 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 - **插件路径**:cordis patch 的 `name:` 必须是字面量 —— patch 模板用
   `<DSH_GW_HOME>` 占位符，`start.sh` 启动前替换生成
   `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml`。
-- **工作区根**:`~/data`(bridge 经 `os.homedir()` 解析）。
+- **工作区根**:`~/data/workspace`(bridge 经 `os.homedir()` 解析）。
 - **可选 Devin**:`devin/` + `DSH_SUBAGENT_DEVIN=1`;`devinPath` 写绝对路径
   （如 `~/.local/bin/devin`),不依赖 PATH。

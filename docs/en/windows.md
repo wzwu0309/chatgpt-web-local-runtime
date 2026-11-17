@@ -93,7 +93,7 @@ OAuth with the owner PIN.
   disabled) — harmless. The `pwsh` tool covers shell needs.
 - **Binaries**: `node_modules/.bin/dsh.cmd`,
   `.venv\Scripts\dsh-mcp-gateway.exe`.
-- **Workspace root**: `%USERPROFILE%\data` — the bridge resolves via
+- **Workspace root**: `%USERPROFILE%\data\workspace` — the bridge resolves via
   `os.homedir()`, so `workspace_switch`'s allowed root follows automatically.
 - **Gateway**: the Python venv and our `oauth.py` `/proc/self/fd` fallback
   already cover Windows — no extra source changes beyond

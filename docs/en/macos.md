@@ -84,6 +84,6 @@ OAuth with the owner PIN.
 - **Plugin paths**: cordis patch `name:` fields must be literal — the patch
   template uses `<DSH_GW_HOME>` placeholders; `start.sh` substitutes them
   into `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml` before launch.
-- **Workspace root**: `~/data` (the bridge resolves via `os.homedir()`).
+- **Workspace root**: `~/data/workspace` (the bridge resolves via `os.homedir()`).
 - **Optional Devin**: `devin/` + `DSH_SUBAGENT_DEVIN=1`; set `devinPath`
   absolutely (e.g. `~/.local/bin/devin`) so PATH doesn't matter.

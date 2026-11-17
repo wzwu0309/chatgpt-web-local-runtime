@@ -72,13 +72,13 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 ## 工作区模型
 
 - `WORKSPACE`(env，默认 `<WORKSPACE_ALLOWED_ROOT>/default`，开箱即
-  `~/data/default`)是 DSH host 的启动 cwd —— 无会话绑定调用的回落
+  `~/data/workspace/default`)是 DSH host 的启动 cwd —— 无会话绑定调用的回落
   工作区根。目录缺失时启动器自动创建；同名位置已有非目录文件则启动
   失败。它**不受**允许根约束（运营者自有入口）；但
   `workspace_switch` 一旦从界外的 `WORKSPACE` 切走，就无法通过该
   工具切回。
 - `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具。切换只绑定发起调用的 conversation:gateway 把 `x-openai-session`(ChatGPT 每会话头；其他客户端以 `mcp-session-id` 兜底）转发为 `sessionId`,bridge 的会话键 Map 持久化到 `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` —— 并发 conversation 在允许子树内各自持根，重启不丢；无身份的调用共享启动根(`WORKSPACE` env)。持久条目加载时按允许子树重校验 —— 越界或不存在的路径被丢弃；Map 上限 256 条。无身份的 `workspace_switch` 只改进程内的默认值，不落盘。
-- `WORKSPACE_ALLOWED_ROOT`(env，默认 `~/data`)—— `workspace_switch`
+- `WORKSPACE_ALLOWED_ROOT`(env，默认 `~/data/workspace`)—— `workspace_switch`
   可指向的子树。启动器透传给 DSH host；启动器与插件对解析后的根
   （含默认路径）做存在性校验，缺失时拒绝启动并提示"创建目录或改配"
   （realpath 校验，拒绝符号链接逃逸）。允许切到根本身 → 整个子树
@@ -101,7 +101,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 4. **`workers.dev` 直连不通** —— 本机网络封 `*.workers.dev`；出站调用（`PUT /_upstream`、健康检查）走 `PROXY`。只影响 start.sh 自己的几条 curl——ChatGPT 从美国直连 Worker 无阻碍。
 5. **`--allowed-host` / OAuth SQLite** —— 网关需要源码补丁；已预先打进 vendored 的 `dsh-mcp-gateway/src/`(editable 安装 → 改动即刻生效）。`gateway-local-changes.patch` 保留为对上游的 delta 记录。
 6. **参数名错误伪装成"没权限"** —— 已在提示层修掉（callContract)。
-7. **`additionalWritableRoots` 被静默忽略** —— 部署的 runtime `0.1.2-rc.1` 早于该配置字段；schemastery 会剥掉未知键。改用 `workspace_switch`（包括切到 `~/data`)。runtime 升级后再加回来。
+7. **`additionalWritableRoots` 被静默忽略** —— 部署的 runtime `0.1.2-rc.1` 早于该配置字段；schemastery 会剥掉未知键。改用 `workspace_switch`（包括切到允许根本身)。runtime 升级后再加回来。
 8. **会话钉死 `sandboxMode`** —— helper 会话保留创建时记录的 mode；部署级 `mode` 改动不回溯生效。但工作区根始终从 `session.header.cwd` 实时解析。
 9. **host 重启窗口 = "连续内部错误"** —— `:3081` 挂掉期间每个 `/call` 都 ECONNREFUSED。ChatGPT 报这个时先查 host 存活（`/api/chatgpt-bridge/revision`)。
 

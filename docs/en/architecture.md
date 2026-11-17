@@ -73,7 +73,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 ## Workspace model
 
 - `WORKSPACE` (env, default `<WORKSPACE_ALLOWED_ROOT>/default`, i.e.
-  `~/data/default` out of the box) is the DSH host's launch cwd — the
+  `~/data/workspace/default` out of the box) is the DSH host's launch cwd — the
   fallback workspace root for calls without a conversation binding. The
   launcher creates it when missing; an existing non-directory path fails
   the launch instead. It is **not** bound by the allowed root
@@ -81,7 +81,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
   from an out-of-bounds `WORKSPACE`, there is no way back through the
   tool.
 - `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin. Switching binds only the calling conversation: the gateway forwards `x-openai-session` (ChatGPT's per-conversation header; `mcp-session-id` is the fallback for other clients) as `sessionId`, and the bridge keeps a session-keyed map persisted to `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` — concurrent conversations hold independent roots inside the allowed subtree, surviving restarts; calls without an identity share the launch root (`WORKSPACE` env). Persisted session entries are re-validated against the allowed subtree on load — out-of-bounds or missing paths are dropped; the map is capped at 256 bindings. A no-identity `workspace_switch` updates only the in-memory default for the process lifetime.
-- `WORKSPACE_ALLOWED_ROOT` (env, default `~/data`) — the subtree `workspace_switch` may target. The launcher forwards it to the DSH host; both the launcher and the plugin refuse to start if the resolved root (default included) is missing, telling the operator to create it or reconfigure (realpath-checked, symlink-escape rejected). Switching to the root itself is allowed → whole subtree becomes the bash-writable root.
+- `WORKSPACE_ALLOWED_ROOT` (env, default `~/data/workspace`) — the subtree `workspace_switch` may target. The launcher forwards it to the DSH host; both the launcher and the plugin refuse to start if the resolved root (default included) is missing, telling the operator to create it or reconfigure (realpath-checked, symlink-escape rejected). Switching to the root itself is allowed → whole subtree becomes the bash-writable root.
 - Switching does **not** mutate a session (DSH `cwd` is creation metadata); it retires the old helper and lazily creates/reuses a helper session keyed by the new cwd. Sandbox boundary = helper session `cwd`.
 
 ## Security model
@@ -100,7 +100,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 4. **`workers.dev` unreachable direct** — this network blocks `*.workers.dev`; outbound calls (`PUT /_upstream`, health check) go via `PROXY`. Only affects start.sh's own curls — ChatGPT reaches the Worker from the US directly.
 5. **`--allowed-host` / OAuth SQLite** — gateway needed source patches; they ship pre-applied in the vendored `dsh-mcp-gateway/src/` (editable install → edits take effect). `gateway-local-changes.patch` is retained as the delta record vs upstream.
 6. **Wrong-argument-name failures** masquerade as "no permission" — fixed in the prompt layer (callContract).
-7. **`additionalWritableRoots` silently ignored** — deployed runtime `0.1.2-rc.1` predates the config field; schemastery strips unknown keys. Use `workspace_switch` (incl. to `~/data`) instead. Re-add when runtime upgrades.
+7. **`additionalWritableRoots` silently ignored** — deployed runtime `0.1.2-rc.1` predates the config field; schemastery strips unknown keys. Use `workspace_switch` (incl. to the allowed root) instead. Re-add when runtime upgrades.
 8. **Session-pinned `sandboxMode`** — helper sessions keep the mode recorded at creation; deployment-level `mode` changes don't retro-apply. Workspace root still resolves live from `session.header.cwd`.
 9. **Host restart window = "continuous internal errors"** — while `:3081` is down every `/call` ECONNREFUSEDs. If ChatGPT reports this, check host liveness first (`/api/chatgpt-bridge/revision`).
 

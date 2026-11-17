@@ -90,7 +90,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
   shell 需求由 `pwsh` 工具覆盖。
 - **二进制**:`node_modules/.bin/dsh.cmd`、
   `.venv\Scripts\dsh-mcp-gateway.exe`。
-- **工作区根**:`%USERPROFILE%\data` —— bridge 经 `os.homedir()` 解析，
+- **工作区根**:`%USERPROFILE%\data\workspace` —— bridge 经 `os.homedir()` 解析，
   `workspace_switch` 的允许根自动跟随。
 - **网关**:Python venv 与 `oauth.py` 的 `/proc/self/fd` 回退本来就覆盖
   Windows —— 除 `gateway-local-changes.patch` 外无需额外源码改动。
