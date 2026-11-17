@@ -34,14 +34,17 @@ fi
 
 echo "[1/4] DSH web host :$DSH_HOST_PORT"
 if ! curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/null; then
+  # Daemons must never be direct children of this script: bash waits on them
+  # at exit otherwise. The bash -c shim backgrounds (exec daemon &) inside a
+  # short-lived shell, so each daemon reparents to init immediately.
   (cd "$WORKSPACE" && DSH_HOME="$DSH_HOME_DIR" DSH_TELEMETRY_DISABLED=1 \
     DSH_MCP_PUBLIC_BASE_URL="${WORKER_PUBLIC_URL:-https://placeholder.invalid}" \
     DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}" \
     WORKSPACE_ALLOWED_ROOT="$WORKSPACE_ALLOWED_ROOT" \
     PATH="$(dirname "$DSH_BIN"):$PATH" \
-    nohup "$DSH_BIN" --profile web --patch "$PATCH_YML" \
-      --host 127.0.0.1 --port "$DSH_HOST_PORT" --no-open \
-      > /tmp/dsh-web-host.log 2>&1 &)
+    bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
+      _ /tmp/dsh-web-host.log "$DSH_BIN" --profile web --patch "$PATCH_YML" \
+      --host 127.0.0.1 --port "$DSH_HOST_PORT" --no-open)
   for i in $(seq 1 30); do
     curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/null && break
     sleep 2
@@ -56,9 +59,9 @@ pkill -f "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT" 2>/dev/null || t
 sleep 1
 : > /tmp/cloudflared.log
 # http2 (TCP 7844) survives networks that throttle UDP/QUIC.
-nohup "$CLOUDFLARED" tunnel --url "http://127.0.0.1:$GATEWAY_PORT" \
-  --protocol http2 --no-autoupdate \
-  > /tmp/cloudflared.log 2>&1 &
+bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
+  _ /tmp/cloudflared.log "$CLOUDFLARED" tunnel \
+  --url "http://127.0.0.1:$GATEWAY_PORT" --protocol http2 --no-autoupdate
 TUNNEL_URL=""
 for i in $(seq 1 30); do
   # -a: log may contain NUL bytes from a killed writer mid-append
@@ -93,12 +96,12 @@ echo "[4/4] gateway :$GATEWAY_PORT (public=$PUBLIC_URL)"
 pkill -f "dsh-mcp-gateway --dsh-harness-url http://127\.0\.0\.1:$DSH_HOST_PORT" 2>/dev/null || true
 sleep 1
 DSH_MCP_GATEWAY_ADMIN_PIN="$DSH_MCP_GATEWAY_ADMIN_PIN" \
-  nohup "$GW_HOME/.venv/bin/dsh-mcp-gateway" \
+  bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
+    _ /tmp/dsh-mcp-gateway.log "$GW_HOME/.venv/bin/dsh-mcp-gateway" \
     --dsh-harness-url "http://127.0.0.1:$DSH_HOST_PORT" \
     --public-base-url "$PUBLIC_URL" \
     --allowed-host "${TUNNEL_URL#https://}" \
-    --state-dir "$STATE_DIR" \
-    > /tmp/dsh-mcp-gateway.log 2>&1 &
+    --state-dir "$STATE_DIR"
 sleep 4
 curl -sf --max-time 15 "${CURL_PROXY_ARGS[@]}" \
   "$PUBLIC_URL/.well-known/oauth-authorization-server" >/dev/null \
