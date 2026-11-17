@@ -77,7 +77,8 @@ OAuth with the owner PIN.
 - If your network blocks `*.workers.dev`, set `PROXY=` in env.conf —
   `curl.exe` ships with Windows 10+ and supports `--proxy`.
 - Logs: `$env:TEMP\dsh-web-host.log`, `cloudflared.log`,
-  `dsh-mcp-gateway.log` (plus `*.err.log` siblings — `Start-Process` splits
+  `dsh-mcp-gateway.launch.log` — launch-level, truncated each start
+  (plus `*.err.log` siblings — `Start-Process` splits
   stdout/stderr). Health: `GET /api/chatgpt-bridge/revision`.
 
 ## Platform notes

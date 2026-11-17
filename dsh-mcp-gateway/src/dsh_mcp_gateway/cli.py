@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import ipaddress
 import os
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlparse
@@ -235,6 +236,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_client_metadata_bytes=args.max_client_metadata_bytes,
         max_registration_request_bytes=args.max_registration_request_bytes,
     )
+    import uvicorn
+
+    # Per-request access lines and dsh_tool_call markers are execution traffic:
+    # they rotate by size in one file the process owns. stdout/stderr stays
+    # launch-level and the launcher truncates it on every start.
+    exec_log = Path(
+        os.environ.get("DSH_MCP_GATEWAY_EXEC_LOG")
+        or (Path(tempfile.gettempdir()) if os.name == "nt" else Path("/tmp")) / "dsh-mcp-gateway.log"
+    )
     server, _provider = build_embedded_oauth_server(
         harness_bridge,
         oauth,
@@ -249,15 +259,59 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(f"MCP gateway listening on http://{args.bind_host}:{args.port}/mcp")
     print(f"OAuth issuer: {oauth.issuer_url}")
-    server.run(
-        transport="streamable-http",
-        host=args.bind_host,
-        port=args.port,
+    print(f"Execution log: {exec_log} (rotates at 5 MiB, keeps 3 files)", flush=True)
+    app = server.streamable_http_app(
         streamable_http_path="/mcp",
         json_response=True,
         transport_security=transport_security,
+        host=args.bind_host,
     )
+    uvicorn_config = uvicorn.Config(
+        app,
+        host=args.bind_host,
+        port=args.port,
+        log_level="info",
+        log_config=_execution_log_config(exec_log),
+    )
+    uvicorn.Server(uvicorn_config).run()
     return 0
+
+
+def _execution_log_config(log_path: Path) -> dict:
+    """uvicorn log_config that routes execution traffic to a rotating file and
+    keeps only startup/error lines on the console stream."""
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "plain": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "use_colors": False,
+            },
+        },
+        "handlers": {
+            "exec_file": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": str(log_path),
+                "maxBytes": 5 * 1024 * 1024,
+                "backupCount": 2,
+                "encoding": "utf-8",
+                "formatter": "plain",
+            },
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+                "formatter": "plain",
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["exec_file", "console"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"handlers": ["exec_file", "console"], "level": "INFO", "propagate": False},
+            "uvicorn.access": {"handlers": ["exec_file"], "level": "INFO", "propagate": False},
+            "dsh_mcp_gateway": {"handlers": ["exec_file"], "level": "INFO", "propagate": False},
+        },
+        "root": {"handlers": ["console"], "level": "WARNING"},
+    }
 
 
 if __name__ == "__main__":

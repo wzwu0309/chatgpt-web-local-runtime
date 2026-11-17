@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
@@ -20,6 +21,8 @@ except ImportError:  # pragma: no cover - optional server dependency
     Context = None
 
 __version__ = "0.1.0"
+
+_exec_log = logging.getLogger("dsh_mcp_gateway")
 
 
 def _session_id_from_context(ctx: Any) -> str | None:
@@ -195,7 +198,7 @@ def build_mcp_server(
             the whole conversation.
             """
             session_id = _session_id_from_context(ctx)
-            print(f"dsh_tool_call session={(session_id or '-')[:32]} name={name}", flush=True)
+            _exec_log.info("dsh_tool_call session=%s name=%s", (session_id or '-')[:32], name)
             return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
 
         @mcp.tool(name="dsh_skill_catalog", annotations=read_only)

@@ -74,7 +74,9 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 - `env.conf` 是 `source` 而非 export —— DSH host 需要的值必须在启动行
   显式转发（这就是 `start.sh` 传 `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"` 的原因）。
 - 日志：`/tmp/dsh-web-host.log`、`/tmp/cloudflared.log`、
-  `/tmp/dsh-mcp-gateway.log`。健康检查：`GET /api/chatgpt-bridge/revision`。
+  `/tmp/dsh-mcp-gateway.launch.log` —— 启动级，每次启动截断。
+  `/tmp/dsh-mcp-gateway.log` 是执行日志（access+调用标记），
+  进程内 5 MiB x3 轮转。健康检查：`GET /api/chatgpt-bridge/revision`。
 
 ## 平台说明
 

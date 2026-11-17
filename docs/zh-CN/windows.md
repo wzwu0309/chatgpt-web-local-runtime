@@ -74,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 - 如果网络封了 `*.workers.dev`，在 env.conf 设 `PROXY=` —— Windows 10+
   自带 `curl.exe`，支持 `--proxy`。
 - 日志：`$env:TEMP\dsh-web-host.log`、`cloudflared.log`、
-  `dsh-mcp-gateway.log`（另有 `*.err.log` —— `Start-Process` 分流
+  `dsh-mcp-gateway.launch.log` —— 启动级，每次启动截断（另有 `*.err.log` —— `Start-Process` 分流
   stdout/stderr)。健康检查：`GET /api/chatgpt-bridge/revision`。
 
 ## 平台说明

@@ -60,17 +60,12 @@ function Stop-ByCommandLine([string]$pattern) {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
-# Keep at most 3 generations of each daemon log (log, log.1, log.2).
-function Rotate-Log([string]$path) {
-    if (Test-Path "$path.2") { Remove-Item "$path.2" -Force }
-    if (Test-Path "$path.1") { Move-Item "$path.1" "$path.2" -Force }
-    if (Test-Path $path)     { Move-Item $path "$path.1" -Force }
-}
-
+# Startup-level logs are truncated on each launch; the gateway's
+# execution log rotates by size inside the process instead.
 Write-Host "[1/4] DSH web host :$DSH_HOST_PORT"
 if (-not (Test-Bridge)) {
-    Rotate-Log "$LOG_DIR\dsh-web-host.log"
-    Rotate-Log "$LOG_DIR\dsh-web-host.err.log"
+    Clear-Content "$LOG_DIR\dsh-web-host.log" -ErrorAction SilentlyContinue
+    Clear-Content "$LOG_DIR\dsh-web-host.err.log" -ErrorAction SilentlyContinue
     $env:DSH_HOME = $DSH_HOME_DIR
     $env:DSH_TELEMETRY_DISABLED = '1'
     $env:DSH_MCP_PUBLIC_BASE_URL = if ($env:WORKER_PUBLIC_URL) { $env:WORKER_PUBLIC_URL } else { 'https://placeholder.invalid' }
@@ -87,8 +82,8 @@ if (Test-Bridge) { Write-Host '  ok' } else { Write-Error "  FAILED - see $LOG_D
 Write-Host "[2/4] cloudflared quick tunnel -> :$GATEWAY_PORT"
 Stop-ByCommandLine "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT"
 Start-Sleep 1
-Rotate-Log "$LOG_DIR\cloudflared.log"
-Rotate-Log "$LOG_DIR\cloudflared.err.log"
+Clear-Content "$LOG_DIR\cloudflared.log" -ErrorAction SilentlyContinue
+Clear-Content "$LOG_DIR\cloudflared.err.log" -ErrorAction SilentlyContinue
 # http2 (TCP 7844) survives networks that throttle UDP/QUIC.
 Start-Process -FilePath $CLOUDFLARED -WindowStyle Hidden `
     -ArgumentList 'tunnel','--url',"http://127.0.0.1:$GATEWAY_PORT",'--protocol','http2','--no-autoupdate' `
@@ -123,13 +118,13 @@ if ($env:WORKER_PUBLIC_URL -and $env:UPSTREAM_ADMIN_SECRET) {
 Write-Host "[4/4] gateway :$GATEWAY_PORT (public=$PUBLIC_URL)"
 Stop-ByCommandLine "dsh-mcp-gateway.*--dsh-harness-url http://127\.0\.0\.1:$DSH_HOST_PORT"
 Start-Sleep 1
-Rotate-Log "$LOG_DIR\dsh-mcp-gateway.log"
-Rotate-Log "$LOG_DIR\dsh-mcp-gateway.err.log"
+Clear-Content "$LOG_DIR\dsh-mcp-gateway.launch.log" -ErrorAction SilentlyContinue
+Clear-Content "$LOG_DIR\dsh-mcp-gateway.err.log" -ErrorAction SilentlyContinue
 $gatewayExe = "$GwHome\.venv\Scripts\dsh-mcp-gateway.exe"
 $tunnelHost = $TUNNEL_URL -replace '^https://', ''
 Start-Process -FilePath $gatewayExe -WindowStyle Hidden `
     -ArgumentList '--dsh-harness-url',"http://127.0.0.1:$DSH_HOST_PORT",'--public-base-url',$PUBLIC_URL,'--allowed-host',$tunnelHost,'--state-dir',$STATE_DIR `
-    -RedirectStandardOutput "$LOG_DIR\dsh-mcp-gateway.log" -RedirectStandardError "$LOG_DIR\dsh-mcp-gateway.err.log"
+    -RedirectStandardOutput "$LOG_DIR\dsh-mcp-gateway.launch.log" -RedirectStandardError "$LOG_DIR\dsh-mcp-gateway.err.log"
 Start-Sleep 4
 & curl.exe -sf --max-time 15 @curlProxy "$PUBLIC_URL/.well-known/oauth-authorization-server" | Out-Null
 if ($LASTEXITCODE -eq 0) { Write-Host '  ok' } else { Write-Host '  warn: public metadata not reachable yet (propagation)' }

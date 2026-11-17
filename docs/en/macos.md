@@ -75,7 +75,10 @@ OAuth with the owner PIN.
   forwarded explicitly on the launch line (this is why `start.sh` passes
   `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"`).
 - Logs: `/tmp/dsh-web-host.log`, `/tmp/cloudflared.log`,
-  `/tmp/dsh-mcp-gateway.log`. Health: `GET /api/chatgpt-bridge/revision`.
+  `/tmp/dsh-mcp-gateway.launch.log` — launch-level, truncated each start.
+  `/tmp/dsh-mcp-gateway.log` is the execution log (access + call
+  markers), rotating at 5 MiB x3 inside the gateway process.
+  Health: `GET /api/chatgpt-bridge/revision`.
 
 ## Platform notes
 
