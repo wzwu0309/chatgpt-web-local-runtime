@@ -112,10 +112,20 @@ DSH_MCP_GATEWAY_ADMIN_PIN="$DSH_MCP_GATEWAY_ADMIN_PIN" \
     --public-base-url "$PUBLIC_URL" \
     --allowed-host "${TUNNEL_URL#https://}" \
     --state-dir "$STATE_DIR"
-sleep 4
-curl -sf --max-time 15 "${CURL_PROXY_ARGS[@]}" \
-  "$PUBLIC_URL/.well-known/oauth-authorization-server" >/dev/null \
-  && echo "  ok" || echo "  warn: public metadata not reachable yet (propagation)"
+# Fresh tunnel edge registration and worker upstream propagation routinely
+# outlast a few seconds — poll briefly instead of probing once.
+ready=
+for _ in $(seq 1 8); do
+  sleep 3
+  if curl -sf --max-time 5 "${CURL_PROXY_ARGS[@]}" \
+    "$PUBLIC_URL/.well-known/oauth-authorization-server" >/dev/null; then
+    ready=1
+    break
+  fi
+done
+[ -n "$ready" ] \
+  && echo "  ok" \
+  || echo "  warn: public metadata not reachable after ~30s (check PROXY/worker upstream)"
 
 echo
 echo "MCP connector URL : $PUBLIC_URL/mcp"
