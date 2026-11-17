@@ -60,8 +60,17 @@ function Stop-ByCommandLine([string]$pattern) {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
+# Keep at most 3 generations of each daemon log (log, log.1, log.2).
+function Rotate-Log([string]$path) {
+    if (Test-Path "$path.2") { Remove-Item "$path.2" -Force }
+    if (Test-Path "$path.1") { Move-Item "$path.1" "$path.2" -Force }
+    if (Test-Path $path)     { Move-Item $path "$path.1" -Force }
+}
+
 Write-Host "[1/4] DSH web host :$DSH_HOST_PORT"
 if (-not (Test-Bridge)) {
+    Rotate-Log "$LOG_DIR\dsh-web-host.log"
+    Rotate-Log "$LOG_DIR\dsh-web-host.err.log"
     $env:DSH_HOME = $DSH_HOME_DIR
     $env:DSH_TELEMETRY_DISABLED = '1'
     $env:DSH_MCP_PUBLIC_BASE_URL = if ($env:WORKER_PUBLIC_URL) { $env:WORKER_PUBLIC_URL } else { 'https://placeholder.invalid' }
@@ -78,7 +87,8 @@ if (Test-Bridge) { Write-Host '  ok' } else { Write-Error "  FAILED - see $LOG_D
 Write-Host "[2/4] cloudflared quick tunnel -> :$GATEWAY_PORT"
 Stop-ByCommandLine "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT"
 Start-Sleep 1
-Clear-Content "$LOG_DIR\cloudflared.log" -ErrorAction SilentlyContinue
+Rotate-Log "$LOG_DIR\cloudflared.log"
+Rotate-Log "$LOG_DIR\cloudflared.err.log"
 # http2 (TCP 7844) survives networks that throttle UDP/QUIC.
 Start-Process -FilePath $CLOUDFLARED -WindowStyle Hidden `
     -ArgumentList 'tunnel','--url',"http://127.0.0.1:$GATEWAY_PORT",'--protocol','http2','--no-autoupdate' `
@@ -113,6 +123,8 @@ if ($env:WORKER_PUBLIC_URL -and $env:UPSTREAM_ADMIN_SECRET) {
 Write-Host "[4/4] gateway :$GATEWAY_PORT (public=$PUBLIC_URL)"
 Stop-ByCommandLine "dsh-mcp-gateway.*--dsh-harness-url http://127\.0\.0\.1:$DSH_HOST_PORT"
 Start-Sleep 1
+Rotate-Log "$LOG_DIR\dsh-mcp-gateway.log"
+Rotate-Log "$LOG_DIR\dsh-mcp-gateway.err.log"
 $gatewayExe = "$GwHome\.venv\Scripts\dsh-mcp-gateway.exe"
 $tunnelHost = $TUNNEL_URL -replace '^https://', ''
 Start-Process -FilePath $gatewayExe -WindowStyle Hidden `

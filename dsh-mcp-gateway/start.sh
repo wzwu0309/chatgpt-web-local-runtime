@@ -42,8 +42,16 @@ if ! mkdir -p "$WORKSPACE" 2>/dev/null; then
   exit 1
 fi
 
+# Keep at most 3 generations of each daemon log (log, log.1, log.2).
+rotate_log() {
+  [ -f "$1.2" ] && rm -f "$1.2"
+  [ -f "$1.1" ] && mv "$1.1" "$1.2"
+  [ -f "$1" ]   && mv "$1"   "$1.1"
+}
+
 echo "[1/4] DSH web host :$DSH_HOST_PORT"
 if ! curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/null; then
+  rotate_log /tmp/dsh-web-host.log
   # Daemons must never be direct children of this script: bash waits on them
   # at exit otherwise. The bash -c shim backgrounds (exec daemon &) inside a
   # short-lived shell, so each daemon reparents to init immediately.
@@ -67,7 +75,7 @@ echo "[2/4] cloudflared quick tunnel -> :$GATEWAY_PORT"
 # Kill only tunnels pointed at our gateway port, regardless of binary path.
 pkill -f "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT" 2>/dev/null || true
 sleep 1
-: > /tmp/cloudflared.log
+rotate_log /tmp/cloudflared.log
 # http2 (TCP 7844) survives networks that throttle UDP/QUIC.
 bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
   _ /tmp/cloudflared.log "$CLOUDFLARED" tunnel \
@@ -105,6 +113,7 @@ echo "[4/4] gateway :$GATEWAY_PORT (public=$PUBLIC_URL)"
 # Kill only gateways pointed at our DSH host port, regardless of how invoked.
 pkill -f "dsh-mcp-gateway --dsh-harness-url http://127\.0\.0\.1:$DSH_HOST_PORT" 2>/dev/null || true
 sleep 1
+rotate_log /tmp/dsh-mcp-gateway.log
 DSH_MCP_GATEWAY_ADMIN_PIN="$DSH_MCP_GATEWAY_ADMIN_PIN" \
   bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
     _ /tmp/dsh-mcp-gateway.log "$GW_HOME/.venv/bin/dsh-mcp-gateway" \
