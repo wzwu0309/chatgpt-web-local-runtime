@@ -1,8 +1,352 @@
 # Delta record of our changes vs upstream dsh-mcp-gateway @ faf9606
 # (https://github.com/siddhartha-yz/dsh-mcp-gateway, MIT — see LICENSE).
-# These changes are ALREADY APPLIED in src/ — do NOT run git apply.
-# To resync with upstream: diff upstream src/ against this directory,
-# re-apply these deltas, and bump the commit noted in pyproject.toml.
+# These changes are ALREADY APPLIED in the tree — do NOT run git apply.
+# Covers the shipped upstream files we modified: src/dsh_mcp_gateway/ and
+# dsh-bridge-plugin/index.js. Excluded by design: pyproject.toml (vendoring
+# comment only), README.md/install.*/start.*/env.conf.example/docs (ours,
+# not upstream edits), and upstream paths we do not ship.
+# To resync with upstream: diff the covered paths against upstream, re-apply
+# these deltas, and bump the commit noted in pyproject.toml.
+diff --git a/dsh-bridge-plugin/index.js b/dsh-bridge-plugin/index.js
+index 0cdd2bb..c39ec5f 100644
+--- a/dsh-bridge-plugin/index.js
++++ b/dsh-bridge-plugin/index.js
+@@ -1,5 +1,9 @@
++import { AsyncLocalStorage } from 'node:async_hooks'
+ import { createHash, randomUUID } from 'node:crypto'
+-import { open } from 'node:fs/promises'
++import { realpathSync, statSync } from 'node:fs'
++import { mkdir, open, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
++import { homedir } from 'node:os'
++import { dirname, join, resolve, sep } from 'node:path'
+ 
+ import { buildChatGPTCapabilityProfile } from './chatgpt-capability-profile.js'
+ 
+@@ -16,6 +20,118 @@ const EXTERNAL_PROVIDER = 'chatgpt-web-external'
+ const EXTERNAL_MODEL = 'chatgpt-web'
+ const CAPABILITY_SESSION_PREFIX = 'dsh-mcp-gateway-chatgpt-capability'
+ 
++// Switchable workspace root. The bridge anchors every capability helper to
++// activeWorkspace() instead of the launch cwd so ChatGPT can retarget tool
++// execution via the workspace_switch tool. Targets are restricted to the
++// allowed root — ~/data/workspace by default, operator-configurable via config.allowedRoot.
++let workspaceAllowedRoot = join(homedir(), 'data', 'workspace')
++
++let currentWorkspace = process.cwd()
++let workspaceLoaded = null
++
++// Workspace resolution for one request: the calling session's binding (set by
++// workspace_switch, persisted to session-workspaces.json) wins; otherwise the
++// launch root (currentWorkspace). The session id is an opaque
++// conversation-scoped token forwarded by the gateway, stable across restarts.
++const callContext = new AsyncLocalStorage()
++const sessionWorkspaces = new Map()
++const MAX_SESSION_WORKSPACES = 256
++const SESSION_STATE_FILE = process.env.DSH_CHATGPT_BRIDGE_SESSION_WORKSPACES_STATE
++  || (process.env.DSH_HOME
++    ? join(process.env.DSH_HOME, 'storages', 'chatgpt-bridge', 'session-workspaces.json')
++    : null)
++
++function activeWorkspace() {
++  return currentWorkspace
++}
++
++function sessionIdOfCall() {
++  return callContext.getStore()?.sessionId ?? null
++}
++
++function sessionIdOf(payload) {
++  return typeof payload?.sessionId === 'string' && payload.sessionId.trim()
++    ? payload.sessionId.trim().slice(0, 256)
++    : null
++}
++
++function activeWorkspaceFor(sessionId) {
++  if (sessionId) {
++    const scoped = sessionWorkspaces.get(sessionId)
++    if (scoped) return scoped
++  }
++  return currentWorkspace
++}
++
++function callWorkspace() {
++  return activeWorkspaceFor(callContext.getStore()?.sessionId)
++}
++
++function bindingSource() {
++  const sessionId = sessionIdOfCall()
++  return sessionId && sessionWorkspaces.has(sessionId) ? 'session' : 'default'
++}
++
++function bindSessionWorkspace(sessionId, real) {
++  if (sessionWorkspaces.size >= MAX_SESSION_WORKSPACES && !sessionWorkspaces.has(sessionId)) {
++    sessionWorkspaces.delete(sessionWorkspaces.keys().next().value)
++  }
++  sessionWorkspaces.set(sessionId, real)
++}
++
++async function persistSessionWorkspaces() {
++  if (!SESSION_STATE_FILE) return
++  await mkdir(dirname(SESSION_STATE_FILE), { recursive: true })
++  const tmp = `${SESSION_STATE_FILE}.tmp-${process.pid}`
++  await writeFile(tmp, `${JSON.stringify({ sessions: Object.fromEntries(sessionWorkspaces) })}\n`)
++  await rename(tmp, SESSION_STATE_FILE)
++}
++
++function ensureWorkspaceLoaded() {
++  if (!workspaceLoaded) {
++    workspaceLoaded = (async () => {
++      if (SESSION_STATE_FILE) {
++        try {
++          const persisted = JSON.parse(await readFile(SESSION_STATE_FILE, 'utf8'))
++          for (const [id, path] of Object.entries(persisted?.sessions ?? {})) {
++            if (sessionWorkspaces.size >= MAX_SESSION_WORKSPACES) break
++            try {
++              sessionWorkspaces.set(id, await resolveAllowedWorkspace(path))
++            } catch {
++              // Stale or out-of-bounds bindings are dropped on load.
++            }
++          }
++        } catch {
++          // Missing/invalid state starts with an empty map.
++        }
++      }
++    })()
++  }
++  return workspaceLoaded
++}
++
++async function resolveAllowedWorkspace(input) {
++  if (typeof input !== 'string' || !input.trim()) {
++    throw new Error('path must be a non-empty string')
++  }
++  const expanded = input.trim().replace(/^~(?=$|[\\/])/, homedir())
++  const real = await realpath(resolve(expanded)).catch(() => {
++    throw new Error(`path does not exist: ${expanded}`)
++  })
++  const root = await realpath(workspaceAllowedRoot)
++  if (real !== root && !real.startsWith(root + sep)) {
++    throw new Error(`path must resolve inside ${workspaceAllowedRoot}: ${real}`)
++  }
++  if (!(await stat(real)).isDirectory()) {
++    throw new Error(`not a directory: ${real}`)
++  }
++  return real
++}
++
++function setWorkspace(real) {
++  currentWorkspace = real
++}
++
+ async function presetStamp(path) {
+   const handle = await open(path, 'r')
+   try {
+@@ -251,6 +367,22 @@ async function readJson(req) {
+ 
+ export function apply(ctx, config = {}) {
+   const capabilityProfile = buildChatGPTCapabilityProfile(config)
++  const allowedRootInput = config.allowedRoot == null ? '' : String(config.allowedRoot).trim()
++  const resolvedRoot = allowedRootInput
++    ? resolve(allowedRootInput.replace(/^~(?=$|[\\/])/, homedir()))
++    : workspaceAllowedRoot
++  let real
++  try {
++    real = realpathSync.native(resolvedRoot)
++  } catch {
++    throw new Error(allowedRootInput
++      ? `dsh-chatgpt-bridge allowedRoot does not exist: ${resolvedRoot}`
++      : `dsh-chatgpt-bridge workspace root ${resolvedRoot} does not exist — create it or set WORKSPACE_ALLOWED_ROOT`)
++  }
++  if (!statSync(real).isDirectory()) {
++    throw new Error(`dsh-chatgpt-bridge allowedRoot is not a directory: ${real}`)
++  }
++  workspaceAllowedRoot = real
+   const capabilityHandles = new Map()
+   const instanceId = randomUUID()
+   let toolRevision = 1
+@@ -317,7 +449,9 @@ export function apply(ctx, config = {}) {
+     const stamp = await presetStamp(preset.path)
+     assertActive()
+     if (presets.defaultId !== presetId) return acquireCapabilityAgent(signal)
+-    const helperSessionId = capabilitySessionId(process.cwd(), presetId, preset.path, stamp)
++    await ensureWorkspaceLoaded()
++    const workspace = callWorkspace()
++    const helperSessionId = capabilitySessionId(workspace, presetId, preset.path, stamp)
+ 
+     let entry = capabilityHandles.get(helperSessionId)
+     if (entry?.disposePromise) {
+@@ -344,7 +478,7 @@ export function apply(ctx, config = {}) {
+           assertActive()
+           const persistedHelper = persisted.find(header => header.id === helperSessionId)
+           if (persistedHelper) {
+-            assertPersistedHelperHeader(persistedHelper, process.cwd(), presetId)
++            assertPersistedHelperHeader(persistedHelper, workspace, presetId)
+             return agents.resume({
+               resumeSessionId: helperSessionId,
+               agentOptions,
+@@ -357,7 +491,7 @@ export function apply(ctx, config = {}) {
+           sessionId: helperSessionId,
+           agentOptions,
+           meta: {
+-            cwd: process.cwd(),
++            cwd: workspace,
+             agentPreset: presetId,
+           },
+           // This Agent is only DSH's native execution identity. The bridge never
+@@ -455,10 +589,11 @@ export function apply(ctx, config = {}) {
+     }
+     const presetId = presets.defaultId
+     const scope = await presets.standingKeyFor(presetId)
++    await ensureWorkspaceLoaded()
+     return {
+       scope,
+       skillOptions: {
+-        cwd: process.cwd(),
++        cwd: callWorkspace(),
+         scope,
+       },
+     }
+@@ -478,11 +613,85 @@ export function apply(ctx, config = {}) {
+     }
+   }
+ 
++  const jsonRender = (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }]
++
++  ctx.effect(() => ctx.tools.register({
++    name: 'workspace_status',
++    description: [
++      'Report the workspace root that subsequent tool calls execute under,',
++      'plus how it was set (conversation binding or launch default).',
++    ].join(' '),
++    parameters: { type: 'object', properties: {}, additionalProperties: false },
++    output: { schema: {}, render: jsonRender },
++    async execute() {
++      await ensureWorkspaceLoaded()
++      return {
++        workspace: callWorkspace(),
++        allowedRoot: workspaceAllowedRoot,
++        binding: bindingSource(),
++      }
++    },
++  }), 'chatgpt-bridge.workspace-status')
++
++  ctx.effect(() => ctx.tools.register({
++    name: 'workspace_switch',
++    description: [
++      'Bind this conversation to a new workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary).',
++      'The binding persists for the whole conversation; the response reports the new root.',
++    ].join(' '),
++    parameters: {
++      type: 'object',
++      properties: {
++        path: {
++          type: 'string',
++          description: 'Absolute or ~-relative path of the new workspace root; must resolve to an existing directory under the allowed root.',
++        },
++      },
++      required: ['path'],
++      additionalProperties: false,
++    },
++    output: { schema: {}, render: jsonRender },
++    async execute(rawArgs) {
++      await ensureWorkspaceLoaded()
++      const sessionId = sessionIdOfCall()
++      const real = await resolveAllowedWorkspace(rawArgs?.path)
++      const previous = activeWorkspaceFor(sessionId)
++      if (real === previous) {
++        // Explicit switch pins the session even when it lands on the fallback,
++        // so a later global change doesn't move this conversation's root.
++        if (sessionId && !sessionWorkspaces.has(sessionId)) {
++          bindSessionWorkspace(sessionId, real)
++          await persistSessionWorkspaces()
++        }
++        return { workspace: real, changed: false }
++      }
++      if (sessionId) {
++        bindSessionWorkspace(sessionId, real)
++        await persistSessionWorkspaces()
++      } else {
++        setWorkspace(real)
++      }
++      // Retire live helpers so the next tool call rebuilds against the new root.
++      for (const [id, entry] of capabilityHandles) {
++        entry.stale = true
++        void maybeDisposeCapabilityEntry(id, entry)
++      }
++      return { workspace: real, previousWorkspace: previous, changed: true }
++    },
++  }), 'chatgpt-bridge.workspace-switch')
++
+   ctx.effect(() => ctx.webServer.register({
+     kind: 'exact',
+     path: `${PREFIX}/revision`,
+     handler: async (_req, res) => {
+-      json(res, 200, { instanceId, toolRevision, skillRevision, capabilityProfile: capabilityProfile.id })
++      await ensureWorkspaceLoaded()
++      let sandboxPolicy
++      try {
++        sandboxPolicy = ctx.get('sandboxPolicy')?.resolve?.({})
++      } catch (error) {
++        sandboxPolicy = `probe failed: ${String(error)}`
++      }
++      json(res, 200, { instanceId, toolRevision, skillRevision, capabilityProfile: capabilityProfile.id, workspace: activeWorkspace(), sandboxPolicy })
+     },
+   }))
+ 
+@@ -506,9 +715,13 @@ export function apply(ctx, config = {}) {
+   ctx.effect(() => ctx.webServer.register({
+     kind: 'exact',
+     path: `${PREFIX}/skills`,
+-    handler: async (_req, res) => {
++    handler: async (req, res) => {
+       try {
+-        const { skillOptions } = await standingLookup()
++        const payload = req.method === 'POST' ? await readJson(req) : null
++        const { skillOptions } = await callContext.run(
++          { sessionId: sessionIdOf(payload) },
++          () => standingLookup(),
++        )
+         const skills = await ctx.skills.list(skillOptions)
+         json(res, 200, {
+           skills: skills
+@@ -543,7 +756,10 @@ export function apply(ctx, config = {}) {
+           json(res, 400, { error: 'invalid_request', message: 'name must be a non-empty string' })
+           return
+         }
+-        const { skillOptions } = await standingLookup()
++        const { skillOptions } = await callContext.run(
++          { sessionId: sessionIdOf(payload) },
++          () => standingLookup(),
++        )
+         const summary = (await ctx.skills.list(skillOptions)).find(skill => skill.name === skillName)
+         if (!summary || summary.invocation?.modelInvocable !== true) {
+           json(res, 404, { error: 'skill_unavailable', message: `skill "${skillName}" is unavailable for model invocation` })
+@@ -593,21 +809,22 @@ export function apply(ctx, config = {}) {
+         if (typeof toolArguments !== 'object' || toolArguments === null || Array.isArray(toolArguments)) {
+           throw new BridgeRequestError(400, 'invalid_request', 'arguments must be an object when supplied')
+         }
++        const sessionId = sessionIdOf(payload)
+         await assertExternalToolAvailable(toolName)
+         capability = await awaitWithinToolCallLifetime(
+-          acquireCapabilityAgent(lifetime.signal),
++          callContext.run({ sessionId }, () => acquireCapabilityAgent(lifetime.signal)),
+           lifetime,
+           lateCapability => lateCapability.release(),
+         )
+         if (lifetime.disconnected.aborted) return
+         const result = await awaitWithinToolCallLifetime(
+-          ctx.tools.execute({
++          callContext.run({ sessionId }, () => ctx.tools.execute({
+             callId: `chatgpt-${randomUUID()}`,
+             name: toolName,
+             arguments: toolArguments,
+             signal: lifetime.signal,
+             agent: capability.agent,
+-          }),
++          })),
+           lifetime,
+           () => {},
+         )
 diff --git a/src/dsh_mcp_gateway/__init__.py b/src/dsh_mcp_gateway/__init__.py
 index 736c206..3ab30a5 100644
 --- a/src/dsh_mcp_gateway/__init__.py
