@@ -5,8 +5,10 @@
 # dsh-bridge-plugin/index.js. Excluded by design: pyproject.toml (vendoring
 # comment only), README.md/install.*/start.*/env.conf.example/docs (ours,
 # not upstream edits), and upstream paths we do not ship.
-# To resync with upstream: diff the covered paths against upstream, re-apply
-# these deltas, and bump the commit noted in pyproject.toml.
+# This file exists for provenance — it records exactly what we changed.
+# Optional: to adopt a newer upstream, diff the covered paths against it,
+# re-apply these deltas (git apply --3way merges when the base has moved),
+# and bump the commit noted in pyproject.toml.
 diff --git a/dsh-bridge-plugin/index.js b/dsh-bridge-plugin/index.js
 index 0cdd2bb..c39ec5f 100644
 --- a/dsh-bridge-plugin/index.js
