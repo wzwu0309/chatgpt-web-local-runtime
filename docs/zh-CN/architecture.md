@@ -4,7 +4,7 @@
 
 ChatGPT Web 是**唯一的推理 agent**。DeepSeek Harness(DSH）在本地作为
 **执行权威**运行：工具、沙箱、会话、技能、工作区。本文档记录最终可行
-的架构、每个文件的作用，以及所有踩过并修掉的坑。
+的架构、每个文件的作用，以及全部运维注意事项。
 
 ```
 ChatGPT Web  (推理 agent；开发者模式 MCP 连接器)
@@ -93,7 +93,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 - `sandbox_permissions` 提权参数存在于工具 schema 但**在这里不可用**:`approval.request()` 必须发生在 agent turn 内；bridge helper 没有 turn → 报 `approval.request() outside an open turn`。不是 bug，不用追。
 - Worker 能看到明文（TLS 在 CF 边缘终止）；内层 OAuth+PIN 就是为此存在。
 
-## 踩过的坑（每一条都是承重点）
+## 运维注意事项（每一条都是承重点）
 
 1. **421 Invalid Host** —— Worker→tunnel 的请求 Host 是 tunnel 域名；网关 DNS-rebinding 防护只认 `workers.dev`。修：每次启动带 `--allowed-host <tunnel-host>`(start.sh 自动取）。
 2. **530 / 隧道死亡** —— 这条网络掐 UDP;QUIC 隧道 ~10 分钟就断。修：`cloudflared --protocol http2`(TCP 7844)。
@@ -168,7 +168,7 @@ ChatGPT ──MCP──> codexpro(Express + 官方 MCP SDK,/mcp)──> 进程�
 | "codex" 功能 | 读 `~/.codex/{sessions,archived_sessions}/*.jsonl`;`handoff_to_codex` 写 plan 文件等外部 codex 来取 —— 文件级约定,不是内嵌 agent | `subagent_devin` spawn 真进程内子 loop |
 
 一等工具确实更干净:没有 catalog→call 两跳,没有 `callContract`
-提示层补丁,上面第 6–8 条坑(参数名不匹配、配置键被剥、sandboxMode
+提示层补丁,上面第 6–8 条注意事项(参数名不匹配、配置键被剥、sandboxMode
 会话快照)以及不可用的 `sandbox_permissions` 提权,是"把通用
 harness 适配进 MCP"才存在的一类问题。
 

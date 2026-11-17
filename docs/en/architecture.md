@@ -5,7 +5,7 @@ English | [中文](../zh-CN/architecture.md)
 ChatGPT Web is the **only reasoning agent**. DeepSeek Harness (DSH) runs locally
 as the **execution authority**: tools, sandbox, sessions, skills, workspace.
 This document captures the final working architecture, what every file does,
-and every pitfall that was hit and fixed.
+and every operational caveat.
 
 ```
 ChatGPT Web  (reasoning agent; dev-mode MCP connector)
@@ -92,7 +92,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 - `sandbox_permissions` escalation exists in the tool schema but is **unusable here**: `approval.request()` must run inside an agent turn; bridge helpers never run turns → `approval.request() outside an open turn` error. Not a bug to chase.
 - Worker sees plaintext (TLS terminates at CF edge); OAuth+PIN is the inner layer for that reason.
 
-## Pitfalls hit (each is a load-bearing detail)
+## Operational caveats (each is a load-bearing detail)
 
 1. **421 Invalid Host** — Worker→tunnel requests carry the tunnel hostname; gateway DNS-rebinding protection allowed only `workers.dev`. Fix: `--allowed-host <tunnel-host>` per launch (start.sh derives it).
 2. **530 / tunnel death** — network throttles UDP; QUIC tunnels die in ~10 min. Fix: `cloudflared --protocol http2` (TCP 7844).
@@ -175,7 +175,7 @@ ChatGPT ──MCP──> codexpro (Express + official MCP SDK, /mcp) ──> in-
 | "Codex" features | reads `~/.codex/{sessions,archived_sessions}/*.jsonl`; `handoff_to_codex` drops a plan file for an external codex — file conventions, not an embedded agent | `subagent_devin` spawns a real in-process child loop |
 
 First-class tools are genuinely cleaner: no catalog→call hop, no
-`callContract` prompt patch, and pitfalls 6–8 above (arg-name
+`callContract` prompt patch, and caveats 6–8 above (arg-name
 mismatches, stripped config keys, session-pinned `sandboxMode`) — plus
 the unusable `sandbox_permissions` escalation — are a class that only
 exists when a general harness is adapted to MCP.
@@ -185,7 +185,7 @@ backend-agnostic: `codexpro start --tunnel none --root ~/data --port 8787`
 could replace gateway+host without touching `_worker.js` —
 `?codexpro_token=` and `Authorization` survive the verbatim proxy, the
 `/mcp` path is identical, and codexpro has no Host-header check (no
-421-class pitfall). Local processes drop from three to two. What goes
+421-class caveat). Local processes drop from three to two. What goes
 with them: OAuth degrades to a URL-borne static token, the OS sandbox
 is replaced by path checks, and the entire DSH capability set (skills,
 jobs, persistent shells, subagent delegation) disappears.

@@ -18,7 +18,7 @@ ChatGPT 需要**一个固定不变的连接器 URL**，而 quick tunnel 每次�
 **[docs/zh-CN/cloudflare.md](docs/zh-CN/cloudflare.md)**。
 
 先读 **[docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)**——里面有完整
-的组件清单、安全模型、所有踩过的坑与修法。然后按你的平台指南部署：
+的组件清单、安全模型、全部运维注意事项。然后按你的平台指南部署：
 **[macOS](docs/zh-CN/macos.md)** 或 **[Windows](docs/zh-CN/windows.md)**。
 
 **为什么一个连接器后面挂着整个 harness:** 这座桥刻意投影完整的
@@ -48,7 +48,7 @@ vendored 网关只是协议适配层；让它作为**长期**连接器运转起�
   过的 `chatgpt-external-v1` 能力画像；网关还带三个预应用的源码
   patch(`--allowed-host`、callContract 提示、跨平台 OAuth SQLite)
   —— 见 [architecture.md](docs/zh-CN/architecture.md)。
-- **平台手册。** macOS / Windows 指南 + architecture.md 里的完整踩坑
+- **平台手册。** macOS / Windows 指南 + architecture.md 里的完整运维注意事项
   目录。
 
 ## 目录结构
@@ -68,7 +68,7 @@ vendored 网关只是协议适配层；让它作为**长期**连接器运转起�
 ```
 docs/
   zh-CN/
-    architecture.md          参考文档 —— 组件、坑(先读这个)
+    architecture.md          参考文档 —— 组件、运维注意事项(先读这个)
     cloudflare.md            CF 控制台里 Worker + KV + 密钥的配置
     macos.md                 macOS 平台指南(install.sh、start.sh、seatbelt)
     windows.md               Windows 平台指南(install.ps1、start.ps1、acl)

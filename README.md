@@ -18,7 +18,7 @@ Bearer-secreted). Free tier suffices — one-time dashboard setup:
 **[docs/en/cloudflare.md](docs/en/cloudflare.md)**.
 
 Read **[docs/en/architecture.md](docs/en/architecture.md)** first — it contains the
-full component inventory, the security model, and every pitfall that was hit
+full component inventory, the security model, and every operational caveat
 and fixed. Then deploy via your platform guide:
 **[macOS](docs/en/macos.md)** or **[Windows](docs/en/windows.md)**.
 
@@ -54,7 +54,7 @@ The vendored gateway is only the protocol adapter; running it as a
   pre-applied source patches (`--allowed-host`, callContract prompts,
   cross-platform OAuth SQLite) — details in
   [architecture.md](docs/en/architecture.md#component-inventory).
-- **Per-OS playbooks.** macOS and Windows guides plus the full pitfalls
+- **Per-OS playbooks.** macOS and Windows guides plus the full operational caveats
   catalog in [architecture.md](docs/en/architecture.md).
 
 ## Layout
@@ -76,7 +76,7 @@ After install the repo is no longer needed at runtime.
 ```
 docs/
   en/
-    architecture.md          the reference doc — components, pitfalls (read this)
+    architecture.md          the reference doc — components, caveats (read this)
     cloudflare.md            Worker + KV + secret setup in the CF dashboard
     macos.md                 macOS platform guide (install.sh, start.sh, seatbelt)
     windows.md               Windows platform guide (install.ps1, start.ps1, acl)
