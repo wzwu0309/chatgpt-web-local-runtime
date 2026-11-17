@@ -75,7 +75,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
   —— 没有有效持久选择时的初始工作区根。它**不受**允许根约束
   （运营者自有入口）；但 `workspace_switch` 一旦从界外的
   `WORKSPACE` 切走，就无法通过该工具切回。
-- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具，持久化到 `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json`（重启不丢，后续运行优先于 `WORKSPACE`)。持久选择加载时会按允许子树重新校验 —— 越界或不存在的存储路径被丢弃，回落到启动 cwd。
+- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具。切换只绑定发起调用的 conversation:gateway 把 `x-openai-session`(ChatGPT 每会话头；其他客户端以 `mcp-session-id` 兜底）转发为 `sessionId`,bridge 用内存 Map 存绑定 —— 并发 conversation 在允许子树内各自持根；无身份的调用共享持久化到 `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json` 的全局默认（重启不丢，后续运行优先于 `WORKSPACE`)。持久选择加载时会按允许子树重新校验 —— 越界或不存在的存储路径被丢弃，回落到启动 cwd。
 - `WORKSPACE_ALLOWED_ROOT`(env，默认 `~/data`)—— `workspace_switch`
   可指向的子树。启动器透传给 DSH host；启动器与插件对解析后的根
   （含默认路径）做存在性校验，缺失时拒绝启动并提示"创建目录或改配"
@@ -161,7 +161,7 @@ ChatGPT ──MCP──> codexpro(Express + 官方 MCP SDK,/mcp)──> 进程�
 | Tool runtime | 全部自写(`bashOps`/`fsOps`/`searchOps`/`analysis`)—— 名字带 codex 但无任何 Codex 代码 | 经 helper capability agent 调 DSH ToolRuntime |
 | 认证 | 静态 bearer / `?codexpro_token=` query(≥24 字节) | OAuth PKCE + 动态注册 + owner PIN |
 | 隔离 | `PathGuard`(allowedRoots + blocked globs)+ safe-bash 白名单;无 OS 沙箱 | seatbelt / windows-acl / bwrap `workspace-write` |
-| 工作区 | `open_workspace` 在 allowedRoots 内选择;可按调用传 `workspace_id`;仅当前 MCP session,不持久化 | `workspace_switch`;持久化;沙箱锚定 helper 会话 cwd |
+| 工作区 | `open_workspace` 在 allowedRoots 内选择;可按调用传 `workspace_id`;仅当前 MCP session,不持久化 | `workspace_switch`;按 conversation 绑定(`x-openai-session` 键控;共享默认持久化);沙箱锚定 helper 会话 cwd |
 | 会话/agent | 无 agent/执行会话 —— 每次调用无状态;`CODEXPRO_BASH_SESSION_ID` 是共享密钥守卫,不是持久 shell | 持久 helper 会话、jobs、skills、`shell_session`、`subagent_devin` |
 | "codex" 功能 | 读 `~/.codex/{sessions,archived_sessions}/*.jsonl`;`handoff_to_codex` 写 plan 文件等外部 codex 来取 —— 文件级约定,不是内嵌 agent | `subagent_devin` spawn 真进程内子 loop |
 

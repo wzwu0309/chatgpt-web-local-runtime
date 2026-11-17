@@ -138,10 +138,13 @@ ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁�
   —— 目录缺失（含默认 `~/data` 缺失）时启动失败并给出修复提示。
   `workspace_switch` 只允许切到该子树内(realpath 校验，拒绝符号
   链接逃逸)；切到根本身则把边界放宽到整棵子树。
-- **持久化**:`workspace_switch` 的选择存在
+- **持久化**：共享默认选择存在
   `home/storages/chatgpt-bridge/active-workspace.json`，重启不丢，
-  且优先于 `WORKSPACE`（删该文件即回落）。`workspace_status` 报告
-  当前根。
+  且优先于 `WORKSPACE`（删该文件即回落）。`workspace_switch` 只绑定
+  发起调用的 conversation —— 以 ChatGPT 每会话携带的
+  `x-openai-session` 头为键（`mcp-session-id` 兜底）—— 并发会话在
+  内存中各自持根，未切换前回落共享默认。`workspace_status` 报告
+  调用方会话的根。
 - **边界**：沙箱化的 `bash`/`pwsh` 只能写活动根以内；`read`/`write`/
   `edit` 文件工具走自己的访问模型。重启后根不对就再
   `workspace_switch` 一次，或删状态文件做全量重置（见

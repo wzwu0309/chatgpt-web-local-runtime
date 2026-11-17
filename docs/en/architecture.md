@@ -77,7 +77,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
   is **not** bound by the allowed root (operator's own entry point); but
   once `workspace_switch` moves away from an out-of-bounds `WORKSPACE`,
   there is no way back through the tool.
-- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin, persisted to `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json` (survives restarts; takes precedence over `WORKSPACE` on later runs). Persisted selections are re-validated against the allowed subtree on load — an out-of-bounds or missing stored path is discarded and the launch cwd is used instead.
+- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin. Switching binds only the calling conversation: the gateway forwards `x-openai-session` (ChatGPT's per-conversation header; `mcp-session-id` is the fallback for other clients) as `sessionId`, and the bridge keeps an in-memory map — concurrent conversations hold independent roots inside the allowed subtree; calls without an identity share the global default persisted to `$DSH_HOME/storages/chatgpt-bridge/active-workspace.json` (survives restarts; takes precedence over `WORKSPACE` on later runs). Persisted selections are re-validated against the allowed subtree on load — an out-of-bounds or missing stored path is discarded and the launch cwd is used instead.
 - `WORKSPACE_ALLOWED_ROOT` (env, default `~/data`) — the subtree `workspace_switch` may target. The launcher forwards it to the DSH host; both the launcher and the plugin refuse to start if the resolved root (default included) is missing, telling the operator to create it or reconfigure (realpath-checked, symlink-escape rejected). Switching to the root itself is allowed → whole subtree becomes the bash-writable root.
 - Switching does **not** mutate a session (DSH `cwd` is creation metadata); it retires the old helper and lazily creates/reuses a helper session keyed by the new cwd. Sandbox boundary = helper session `cwd`.
 
@@ -167,7 +167,7 @@ ChatGPT ──MCP──> codexpro (Express + official MCP SDK, /mcp) ──> in-
 | Tool runtime | own code (`bashOps`/`fsOps`/`searchOps`/`analysis`) — no Codex code despite the name | DSH ToolRuntime via helper capability agents |
 | Auth | static bearer / `?codexpro_token=` query (≥24 bytes) | OAuth PKCE + dynamic registration + owner PIN |
 | Confinement | `PathGuard` (allowedRoots + blocked globs) + safe-bash allowlist; no OS sandbox | seatbelt / windows-acl / bwrap `workspace-write` |
-| Workspace | `open_workspace` selects inside allowedRoots; per-call `workspace_id`; per-MCP-session, not persisted | `workspace_switch`; persisted; sandbox anchored to helper-session cwd |
+| Workspace | `open_workspace` selects inside allowedRoots; per-call `workspace_id`; per-MCP-session, not persisted | `workspace_switch`; per-conversation binding via `x-openai-session` (shared default persisted); sandbox anchored to helper-session cwd |
 | Sessions/agents | no agent or exec sessions — each call is stateless; `CODEXPRO_BASH_SESSION_ID` is a shared-secret guard, not a shell | durable helper sessions, jobs, skills, `shell_session`, `subagent_devin` |
 | "Codex" features | reads `~/.codex/{sessions,archived_sessions}/*.jsonl`; `handoff_to_codex` drops a plan file for an external codex — file conventions, not an embedded agent | `subagent_devin` spawns a real in-process child loop |
 

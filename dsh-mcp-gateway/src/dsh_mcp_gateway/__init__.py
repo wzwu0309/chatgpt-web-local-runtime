@@ -14,6 +14,11 @@ from .harness_bridge import (
 )
 from .mcp_compat import disable_modern_subscriptions
 
+try:  # resolved lazily via get_type_hints; only the MCP server path dereferences it
+    from mcp.server.mcpserver.context import Context
+except ImportError:  # pragma: no cover - optional server dependency
+    Context = None
+
 __version__ = "0.1.0"
 
 
@@ -164,7 +169,7 @@ def build_mcp_server(
             }
 
         @mcp.tool(name="dsh_tool_call", annotations=consequential_control)
-        def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None) -> Any:
+        def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None, ctx: Context = None) -> Any:
             """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline.
 
             `arguments` must satisfy the target tool's schema from dsh_tool_catalog — include
@@ -173,7 +178,17 @@ def build_mcp_server(
             `command` and `description`. Missing or misnamed required properties are rejected
             before execution.
             """
-            return tool_result_to_mcp(harness_bridge.call(name, arguments))
+            # Conversation identity for workspace_switch scoping: ChatGPT sends a
+            # stable per-conversation x-openai-session; mcp-session-id is the spec
+            # fallback other clients may carry; ctx.session_id covers SDK sessions.
+            session_id = None
+            request = getattr(getattr(ctx, "request_context", None), "request", None)
+            headers = getattr(request, "headers", None)
+            if headers:
+                session_id = headers.get("x-openai-session") or headers.get("mcp-session-id")
+            session_id = session_id or getattr(ctx, "session_id", None)
+            print(f"dsh_tool_call session={(session_id or '-')[:32]} name={name}", flush=True)
+            return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
 
         @mcp.tool(name="dsh_skill_catalog", annotations=read_only)
         def dsh_skill_catalog() -> dict[str, Any]:

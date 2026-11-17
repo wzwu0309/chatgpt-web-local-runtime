@@ -418,15 +418,24 @@ class HarnessBridgeClient:
             raise HarnessBridgeError("DSH bridge returned an invalid skill definition")
         return dict(_validated_skill(skill, require_content=True))
 
-    def call(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    def call(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         if not name.strip():
             raise ValueError("name must be non-empty")
         if arguments is not None and not isinstance(arguments, dict):
             raise ValueError("arguments must be an object when supplied")
+        payload: dict[str, Any] = {"name": name, "arguments": arguments or {}}
+        if session_id:
+            payload["sessionId"] = session_id
         return _validated_tool_result(
             self._request(
                 "/api/chatgpt-bridge/call",
-                payload={"name": name, "arguments": arguments or {}},
+                payload=payload,
                 timeout_s=self.tool_call_timeout_s,
             )
         )

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync, statSync } from 'node:fs'
 import { mkdir, open, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
@@ -33,8 +34,44 @@ const WORKSPACE_STATE_FILE = process.env.DSH_CHATGPT_BRIDGE_WORKSPACE_STATE
 let currentWorkspace = process.cwd()
 let workspaceLoaded = null
 
+// Workspace resolution for one /call: the calling session's binding (set by
+// workspace_switch) wins; otherwise the shared default (currentWorkspace,
+// persisted across restarts). Session bindings are in-memory only — the
+// session id is an opaque conversation-scoped token forwarded by the gateway.
+const callContext = new AsyncLocalStorage()
+const sessionWorkspaces = new Map()
+const MAX_SESSION_WORKSPACES = 256
+
 function activeWorkspace() {
   return currentWorkspace
+}
+
+function sessionIdOfCall() {
+  return callContext.getStore()?.sessionId ?? null
+}
+
+function activeWorkspaceFor(sessionId) {
+  if (sessionId) {
+    const scoped = sessionWorkspaces.get(sessionId)
+    if (scoped) return scoped
+  }
+  return currentWorkspace
+}
+
+function callWorkspace() {
+  return activeWorkspaceFor(callContext.getStore()?.sessionId)
+}
+
+function bindingSource() {
+  const sessionId = sessionIdOfCall()
+  return sessionId && sessionWorkspaces.has(sessionId) ? 'session' : 'default'
+}
+
+function bindSessionWorkspace(sessionId, real) {
+  if (sessionWorkspaces.size >= MAX_SESSION_WORKSPACES && !sessionWorkspaces.has(sessionId)) {
+    sessionWorkspaces.delete(sessionWorkspaces.keys().next().value)
+  }
+  sessionWorkspaces.set(sessionId, real)
 }
 
 function ensureWorkspaceLoaded() {
@@ -398,7 +435,7 @@ export function apply(ctx, config = {}) {
     assertActive()
     if (presets.defaultId !== presetId) return acquireCapabilityAgent(signal)
     await ensureWorkspaceLoaded()
-    const workspace = activeWorkspace()
+    const workspace = callWorkspace()
     const helperSessionId = capabilitySessionId(workspace, presetId, preset.path, stamp)
 
     let entry = capabilityHandles.get(helperSessionId)
@@ -541,7 +578,7 @@ export function apply(ctx, config = {}) {
     return {
       scope,
       skillOptions: {
-        cwd: activeWorkspace(),
+        cwd: callWorkspace(),
         scope,
       },
     }
@@ -573,7 +610,11 @@ export function apply(ctx, config = {}) {
     output: { schema: {}, render: jsonRender },
     async execute() {
       await ensureWorkspaceLoaded()
-      return { workspace: activeWorkspace(), allowedRoot: workspaceAllowedRoot }
+      return {
+        workspace: callWorkspace(),
+        allowedRoot: workspaceAllowedRoot,
+        binding: bindingSource(),
+      }
     },
   }), 'chatgpt-bridge.workspace-status')
 
@@ -581,6 +622,7 @@ export function apply(ctx, config = {}) {
     name: 'workspace_switch',
     description: [
       'Switch the DSH workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary).',
+      'The switch binds the calling session only; other sessions keep their own workspace.',
       'path may use ~; it must resolve to an existing directory under the allowed data root.',
       'Use workspace_status to see the current root.',
     ].join(' '),
@@ -598,12 +640,20 @@ export function apply(ctx, config = {}) {
     output: { schema: {}, render: jsonRender },
     async execute(rawArgs) {
       await ensureWorkspaceLoaded()
+      const sessionId = sessionIdOfCall()
       const real = await resolveAllowedWorkspace(rawArgs?.path)
-      const previous = activeWorkspace()
+      const previous = activeWorkspaceFor(sessionId)
       if (real === previous) {
+        // Explicit switch pins the session even when it lands on the fallback,
+        // so a later global change doesn't move this conversation's root.
+        if (sessionId && !sessionWorkspaces.has(sessionId)) bindSessionWorkspace(sessionId, real)
         return { workspace: real, changed: false }
       }
-      await setWorkspace(real)
+      if (sessionId) {
+        bindSessionWorkspace(sessionId, real)
+      } else {
+        await setWorkspace(real)
+      }
       // Retire live helpers so the next tool call rebuilds against the new root.
       for (const [id, entry] of capabilityHandles) {
         entry.stale = true
@@ -735,21 +785,24 @@ export function apply(ctx, config = {}) {
         if (typeof toolArguments !== 'object' || toolArguments === null || Array.isArray(toolArguments)) {
           throw new BridgeRequestError(400, 'invalid_request', 'arguments must be an object when supplied')
         }
+        const sessionId = typeof payload.sessionId === 'string' && payload.sessionId.trim()
+          ? payload.sessionId.trim().slice(0, 256)
+          : null
         await assertExternalToolAvailable(toolName)
         capability = await awaitWithinToolCallLifetime(
-          acquireCapabilityAgent(lifetime.signal),
+          callContext.run({ sessionId }, () => acquireCapabilityAgent(lifetime.signal)),
           lifetime,
           lateCapability => lateCapability.release(),
         )
         if (lifetime.disconnected.aborted) return
         const result = await awaitWithinToolCallLifetime(
-          ctx.tools.execute({
+          callContext.run({ sessionId }, () => ctx.tools.execute({
             callId: `chatgpt-${randomUUID()}`,
             name: toolName,
             arguments: toolArguments,
             signal: lifetime.signal,
             agent: capability.agent,
-          }),
+          })),
           lifetime,
           () => {},
         )
