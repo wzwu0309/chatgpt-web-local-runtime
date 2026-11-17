@@ -138,6 +138,12 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
 ChatGPT operates on a **switchable workspace root**, not your whole disk.
 `~` below means your OS home directory (`C:\Users\<you>` on Windows).
 
+- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data/workspace`;
+  set it in `env.conf` to relocate the whole switchable boundary. The
+  resolved root must exist — a missing directory (default included) fails
+  the launch with a fix-it hint. `workspace_switch` may only retarget
+  inside this subtree — realpath-checked, symlink escapes rejected;
+  switching to the root itself widens the boundary to the whole subtree.
 - **`WORKSPACE` (env var) — the fallback root.** Default:
   `<WORKSPACE_ALLOWED_ROOT>/default` (`~/data/workspace/default` out of the box —
   the launcher's working directory). Change via the `WORKSPACE` env var
@@ -145,12 +151,6 @@ ChatGPT operates on a **switchable workspace root**, not your whole disk.
   binding, and calls without an identity, run here; the directory is
   created automatically when missing, while an existing non-directory
   path fails the launch with a fix-it hint.
-- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data/workspace`;
-  set it in `env.conf` to relocate the whole switchable boundary. The
-  resolved root must exist — a missing directory (default included) fails
-  the launch with a fix-it hint. `workspace_switch` may only retarget
-  inside this subtree — realpath-checked, symlink escapes rejected;
-  switching to the root itself widens the boundary to the whole subtree.
 - **Persistence:** `workspace_switch` binds only the calling
   conversation — keyed by the `x-openai-session` header ChatGPT sends
   per conversation (`mcp-session-id` is the fallback) — and the

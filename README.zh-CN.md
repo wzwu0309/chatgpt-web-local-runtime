@@ -130,17 +130,17 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
 ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁盘。下文的
 `~` 指系统 home 目录（Windows 上即 `C:\Users\<你>`）。
 
+- **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data/workspace`;
+  在 env.conf 里改可将整个可切换边界移走。解析后的根必须存在
+  —— 目录缺失（含默认 `~/data/workspace` 缺失）时启动失败并给出修复提示。
+  `workspace_switch` 只允许切到该子树内(realpath 校验，拒绝符号
+  链接逃逸)；切到根本身则把边界放宽到整棵子树。
 - **`WORKSPACE`(环境变量)—— 回落根。** 默认
   `<WORKSPACE_ALLOWED_ROOT>/default`（开箱即 `~/data/workspace/default`，启动器
   的工作目录）。用 `WORKSPACE` 环境变量或 env.conf 里
   `WORKSPACE=<绝对路径>` 修改；无绑定的会话和无身份调用落在这里；
   目录缺失时自动创建，若同名位置已有非目录文件则启动失败并给出修复
   提示。
-- **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data/workspace`;
-  在 env.conf 里改可将整个可切换边界移走。解析后的根必须存在
-  —— 目录缺失（含默认 `~/data/workspace` 缺失）时启动失败并给出修复提示。
-  `workspace_switch` 只允许切到该子树内(realpath 校验，拒绝符号
-  链接逃逸)；切到根本身则把边界放宽到整棵子树。
 - **持久化**:`workspace_switch` 只绑定发起调用的 conversation
   —— 以 ChatGPT 每会话携带的 `x-openai-session` 头为键
   （`mcp-session-id` 兜底）—— 绑定持久化在
