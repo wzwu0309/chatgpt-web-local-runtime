@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import ipaddress
+import logging
 import os
 import tempfile
 from collections.abc import Sequence
@@ -239,7 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     import uvicorn
 
     # Per-request access lines and dsh_tool_call markers are execution traffic:
-    # they rotate by size in one file the process owns. stdout/stderr stays
+    # they go to one bounded file the process owns. stdout/stderr stays
     # launch-level and the launcher truncates it on every start.
     exec_log = Path(
         os.environ.get("DSH_MCP_GATEWAY_EXEC_LOG")
@@ -259,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(f"MCP gateway listening on http://{args.bind_host}:{args.port}/mcp")
     print(f"OAuth issuer: {oauth.issuer_url}")
-    print(f"Execution log: {exec_log} (rotates at 5 MiB, keeps 3 files)", flush=True)
+    print(f"Execution log: {exec_log} (bounded to 8 MiB)", flush=True)
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         json_response=True,
@@ -277,9 +278,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+class _BoundedFileHandler(logging.FileHandler):
+    """Append-only log file that drops its oldest half when it exceeds
+    `max_bytes`, so a single file stays bounded without rotations."""
+
+    def __init__(self, filename: str, max_bytes: int, **kwargs) -> None:
+        self._max_bytes = max_bytes
+        super().__init__(filename, **kwargs)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        if os.path.getsize(self.baseFilename) <= self._max_bytes:
+            return
+        self.stream.close()
+        keep = self._max_bytes // 2
+        marker = b"... older lines dropped ...\n"
+        with open(self.baseFilename, "rb+") as raw:
+            raw.seek(-keep, os.SEEK_END)
+            tail = raw.read()
+            nl = tail.find(b"\n")
+            tail = tail[nl + 1 :] if nl != -1 else b""
+            raw.seek(0)
+            raw.write(marker + tail)
+            raw.truncate()
+        self.stream = self._open()
+
+
 def _execution_log_config(log_path: Path) -> dict:
-    """uvicorn log_config that routes execution traffic to a rotating file and
-    keeps only startup/error lines on the console stream."""
+    """uvicorn log_config that routes execution traffic to a single bounded
+    file and keeps only startup/error lines on the console stream."""
     return {
         "version": 1,
         "disable_existing_loggers": False,
@@ -291,10 +318,9 @@ def _execution_log_config(log_path: Path) -> dict:
         },
         "handlers": {
             "exec_file": {
-                "class": "logging.handlers.RotatingFileHandler",
+                "()": "dsh_mcp_gateway.cli._BoundedFileHandler",
                 "filename": str(log_path),
-                "maxBytes": 5 * 1024 * 1024,
-                "backupCount": 2,
+                "max_bytes": 8 * 1024 * 1024,
                 "encoding": "utf-8",
                 "formatter": "plain",
             },

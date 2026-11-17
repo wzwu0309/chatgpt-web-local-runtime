@@ -142,7 +142,7 @@ Cloudflare 的域名）可以免掉代理，但属可选。
 - 日志在启动器的临时目录（macOS 为 `/tmp`,Windows 为 `$env:TEMP`):
   `dsh-web-host.log`、`cloudflared.log`、`dsh-mcp-gateway.launch.log`
   （启动级，每次启动截断）;`dsh-mcp-gateway.log` 是执行日志，
-  进程内 5 MiB x3 轮转。
+  进程内单文件 8 MiB 截头限界。
 - tunnel URL 随 cloudflared 进程存续 —— 进程死了，Worker 还指着死上游，
   需要重跑启动器发布新 URL。
 - 运行态全重置：停 host，如 helper 会话行为异常可删

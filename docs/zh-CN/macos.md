@@ -76,7 +76,7 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 - 日志：`/tmp/dsh-web-host.log`、`/tmp/cloudflared.log`、
   `/tmp/dsh-mcp-gateway.launch.log` —— 启动级，每次启动截断。
   `/tmp/dsh-mcp-gateway.log` 是执行日志（access+调用标记），
-  进程内 5 MiB x3 轮转。健康检查：`GET /api/chatgpt-bridge/revision`。
+  进程内单文件 8 MiB 截头限界。健康检查：`GET /api/chatgpt-bridge/revision`。
 
 ## 平台说明
 

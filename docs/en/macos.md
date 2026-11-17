@@ -77,7 +77,7 @@ OAuth with the owner PIN.
 - Logs: `/tmp/dsh-web-host.log`, `/tmp/cloudflared.log`,
   `/tmp/dsh-mcp-gateway.launch.log` — launch-level, truncated each start.
   `/tmp/dsh-mcp-gateway.log` is the execution log (access + call
-  markers), rotating at 5 MiB x3 inside the gateway process.
+  markers), a single file bounded to 8 MiB inside the gateway process.
   Health: `GET /api/chatgpt-bridge/revision`.
 
 ## Platform notes

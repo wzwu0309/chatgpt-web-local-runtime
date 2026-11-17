@@ -147,7 +147,7 @@ Cloudflare) removes the proxy need but is optional.
 - Logs live in the launcher temp dir (`/tmp` on macOS, `$env:TEMP` on Windows):
   `dsh-web-host.log`, `cloudflared.log`, `dsh-mcp-gateway.launch.log`
   (launch-level, truncated each start); `dsh-mcp-gateway.log` is the
-  execution log, rotating at 5 MiB x3 inside the process.
+  execution log, a single file bounded to 8 MiB inside the process.
 - The tunnel URL lives as long as the cloudflared process does — if it dies,
   the Worker keeps pointing at a dead upstream until the launcher publishes a
   fresh one.
