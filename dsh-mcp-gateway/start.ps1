@@ -35,6 +35,9 @@ if (-not $env:DSH_MCP_GATEWAY_ADMIN_PIN) {
 if (-not (Test-Path $WORKSPACE_ALLOWED_ROOT -PathType Container)) {
     Write-Error "WORKSPACE_ALLOWED_ROOT '$WORKSPACE_ALLOWED_ROOT' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE_ALLOWED_ROOT') or set WORKSPACE_ALLOWED_ROOT in env.conf"; exit 1
 }
+if (-not (Test-Path $WORKSPACE -PathType Container)) {
+    Write-Error "WORKSPACE '$WORKSPACE' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE') or set WORKSPACE in env.conf"; exit 1
+}
 
 # Materialize the patch: plugin `name:` fields need real absolute paths.
 $patchYml = "$GwHome\deploy\dsh\chatgpt-bridge.windows.resolved.cordis.yml"

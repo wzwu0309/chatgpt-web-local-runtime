@@ -31,6 +31,11 @@ if [ ! -d "$WORKSPACE_ALLOWED_ROOT" ]; then
   echo "Create it (mkdir -p \"$WORKSPACE_ALLOWED_ROOT\") or set WORKSPACE_ALLOWED_ROOT in env.conf." >&2
   exit 1
 fi
+if [ ! -d "$WORKSPACE" ]; then
+  echo "WORKSPACE '$WORKSPACE' does not exist." >&2
+  echo "Create it (mkdir -p \"$WORKSPACE\") or set WORKSPACE in env.conf." >&2
+  exit 1
+fi
 
 echo "[1/4] DSH web host :$DSH_HOST_PORT"
 if ! curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/null; then

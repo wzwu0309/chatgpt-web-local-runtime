@@ -130,9 +130,10 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
 ChatGPT 操作的是一个**可切换的工作区根**，不是你的整块磁盘。下文的
 `~` 指系统 home 目录（Windows 上即 `C:\Users\<你>`）。
 
-- **`WORKSPACE`(环境变量)—— 初始根。** 默认 `~/data/workspace`
+- **`WORKSPACE`(环境变量)—— 回落根。** 默认 `~/data/workspace`
   （启动器的工作目录）。用 `WORKSPACE` 环境变量或 env.conf 里
-  `WORKSPACE=<绝对路径>` 修改；在首次运行或无有效持久选择时生效。
+  `WORKSPACE=<绝对路径>` 修改；无绑定的会话和无身份调用落在这里；
+  目录必须存在，否则启动失败并给出修复提示。
 - **`WORKSPACE_ALLOWED_ROOT`(环境变量)—— 允许根。** 默认 `~/data`;
   在 env.conf 里改可将整个可切换边界移走。解析后的根必须存在
   —— 目录缺失（含默认 `~/data` 缺失）时启动失败并给出修复提示。

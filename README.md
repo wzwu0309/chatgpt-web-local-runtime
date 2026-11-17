@@ -138,10 +138,11 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
 ChatGPT operates on a **switchable workspace root**, not your whole disk.
 `~` below means your OS home directory (`C:\Users\<you>` on Windows).
 
-- **`WORKSPACE` (env var) — the initial root.** Default:
+- **`WORKSPACE` (env var) — the fallback root.** Default:
   `~/data/workspace` (the launcher's working directory). Change via the
   `WORKSPACE` env var or a `WORKSPACE=<abs path>` line in `env.conf`.
-  Applies on first run or when no persisted selection exists.
+  Conversations without a binding, and calls without an identity, run
+  here; the directory must exist or the launch fails with a fix-it hint.
 - **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data`;
   set it in `env.conf` to relocate the whole switchable boundary. The
   resolved root must exist — a missing directory (default included) fails
