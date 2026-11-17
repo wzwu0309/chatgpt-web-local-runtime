@@ -177,6 +177,10 @@ def build_mcp_server(
             parameters.properties: read/write/edit take `file_path` (not `path`), bash takes
             `command` and `description`. Missing or misnamed required properties are rejected
             before execution.
+
+            Calls run under the calling conversation's bound workspace. If paths resolve
+            to an unexpected project, call workspace_status to inspect the current root
+            and workspace_switch to rebind before retrying.
             """
             # Conversation identity for workspace_switch scoping: ChatGPT sends a
             # stable per-conversation x-openai-session; mcp-session-id is the spec

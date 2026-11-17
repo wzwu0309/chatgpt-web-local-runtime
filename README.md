@@ -154,9 +154,9 @@ ChatGPT operates on a **switchable workspace root**, not your whole disk.
   back to it). `workspace_switch` binds only the calling conversation —
   keyed by the `x-openai-session` header ChatGPT sends per conversation
   (`mcp-session-id` is the fallback) — so concurrent chats keep
-  independent roots in memory and fall back to the shared default until
-  they switch. `workspace_status` reports the calling conversation's
-  root.
+  independent roots, persisted in `session-workspaces.json` alongside
+  it, and fall back to the shared default until they switch.
+  `workspace_status` reports the calling conversation's root.
 - **Boundary:** sandboxed `bash`/`pwsh` writes stay inside the active
   root; the read/write/edit file tools follow their own access model.
   Wrong root after a restart? `workspace_switch` again — or delete the

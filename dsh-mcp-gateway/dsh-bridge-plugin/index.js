@@ -35,12 +35,16 @@ let currentWorkspace = process.cwd()
 let workspaceLoaded = null
 
 // Workspace resolution for one /call: the calling session's binding (set by
-// workspace_switch) wins; otherwise the shared default (currentWorkspace,
-// persisted across restarts). Session bindings are in-memory only — the
-// session id is an opaque conversation-scoped token forwarded by the gateway.
+// workspace_switch) wins; otherwise the shared default (currentWorkspace).
+// Both layers persist under DSH_HOME — the session id is an opaque
+// conversation-scoped token forwarded by the gateway, stable across restarts.
 const callContext = new AsyncLocalStorage()
 const sessionWorkspaces = new Map()
 const MAX_SESSION_WORKSPACES = 256
+const SESSION_STATE_FILE = process.env.DSH_CHATGPT_BRIDGE_SESSION_WORKSPACES_STATE
+  || (process.env.DSH_HOME
+    ? join(process.env.DSH_HOME, 'storages', 'chatgpt-bridge', 'session-workspaces.json')
+    : null)
 
 function activeWorkspace() {
   return currentWorkspace
@@ -74,15 +78,39 @@ function bindSessionWorkspace(sessionId, real) {
   sessionWorkspaces.set(sessionId, real)
 }
 
+async function persistSessionWorkspaces() {
+  if (!SESSION_STATE_FILE) return
+  await mkdir(dirname(SESSION_STATE_FILE), { recursive: true })
+  const tmp = `${SESSION_STATE_FILE}.tmp-${process.pid}`
+  await writeFile(tmp, `${JSON.stringify({ sessions: Object.fromEntries(sessionWorkspaces) })}\n`)
+  await rename(tmp, SESSION_STATE_FILE)
+}
+
 function ensureWorkspaceLoaded() {
   if (!workspaceLoaded) {
     workspaceLoaded = (async () => {
-      if (!WORKSPACE_STATE_FILE) return
-      try {
-        const persisted = JSON.parse(await readFile(WORKSPACE_STATE_FILE, 'utf8'))
-        currentWorkspace = await resolveAllowedWorkspace(persisted?.workspace)
-      } catch {
-        // Missing/invalid state falls back to the launch cwd.
+      if (WORKSPACE_STATE_FILE) {
+        try {
+          const persisted = JSON.parse(await readFile(WORKSPACE_STATE_FILE, 'utf8'))
+          currentWorkspace = await resolveAllowedWorkspace(persisted?.workspace)
+        } catch {
+          // Missing/invalid state falls back to the launch cwd.
+        }
+      }
+      if (SESSION_STATE_FILE) {
+        try {
+          const persisted = JSON.parse(await readFile(SESSION_STATE_FILE, 'utf8'))
+          for (const [id, path] of Object.entries(persisted?.sessions ?? {})) {
+            if (sessionWorkspaces.size >= MAX_SESSION_WORKSPACES) break
+            try {
+              sessionWorkspaces.set(id, await resolveAllowedWorkspace(path))
+            } catch {
+              // Stale or out-of-bounds bindings are dropped on load.
+            }
+          }
+        } catch {
+          // Missing/invalid state starts with an empty map.
+        }
       }
     })()
   }
@@ -604,7 +632,8 @@ export function apply(ctx, config = {}) {
     name: 'workspace_status',
     description: [
       'Report the DSH workspace root that subsequent tool calls execute under.',
-      'Use workspace_switch to retarget it; allowed roots live under the operator-configured data tree.',
+      'If it is not the project you expect, call workspace_switch to bind this conversation to the right directory.',
+      'Allowed roots live under the operator-configured data tree.',
     ].join(' '),
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: { schema: {}, render: jsonRender },
@@ -622,7 +651,7 @@ export function apply(ctx, config = {}) {
     name: 'workspace_switch',
     description: [
       'Switch the DSH workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary).',
-      'The switch binds the calling session only; other sessions keep their own workspace.',
+      'The switch binds the calling conversation only and persists until it switches again; other conversations keep their own workspace.',
       'path may use ~; it must resolve to an existing directory under the allowed data root.',
       'Use workspace_status to see the current root.',
     ].join(' '),
@@ -646,11 +675,15 @@ export function apply(ctx, config = {}) {
       if (real === previous) {
         // Explicit switch pins the session even when it lands on the fallback,
         // so a later global change doesn't move this conversation's root.
-        if (sessionId && !sessionWorkspaces.has(sessionId)) bindSessionWorkspace(sessionId, real)
+        if (sessionId && !sessionWorkspaces.has(sessionId)) {
+          bindSessionWorkspace(sessionId, real)
+          await persistSessionWorkspaces()
+        }
         return { workspace: real, changed: false }
       }
       if (sessionId) {
         bindSessionWorkspace(sessionId, real)
+        await persistSessionWorkspaces()
       } else {
         await setWorkspace(real)
       }
