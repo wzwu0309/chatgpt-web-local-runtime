@@ -22,14 +22,9 @@ const CAPABILITY_SESSION_PREFIX = 'dsh-mcp-gateway-chatgpt-capability'
 
 // Switchable workspace root. The bridge anchors every capability helper to
 // activeWorkspace() instead of the launch cwd so ChatGPT can retarget tool
-// execution via the workspace_switch tool. Persisted under DSH_HOME so the
-// selection survives host restarts; targets are restricted to the allowed
-// root — ~/data by default, operator-configurable via config.allowedRoot.
+// execution via the workspace_switch tool. Targets are restricted to the
+// allowed root — ~/data by default, operator-configurable via config.allowedRoot.
 let workspaceAllowedRoot = join(homedir(), 'data')
-const WORKSPACE_STATE_FILE = process.env.DSH_CHATGPT_BRIDGE_WORKSPACE_STATE
-  || (process.env.DSH_HOME
-    ? join(process.env.DSH_HOME, 'storages', 'chatgpt-bridge', 'active-workspace.json')
-    : null)
 
 let currentWorkspace = process.cwd()
 let workspaceLoaded = null
@@ -89,14 +84,6 @@ async function persistSessionWorkspaces() {
 function ensureWorkspaceLoaded() {
   if (!workspaceLoaded) {
     workspaceLoaded = (async () => {
-      if (WORKSPACE_STATE_FILE) {
-        try {
-          const persisted = JSON.parse(await readFile(WORKSPACE_STATE_FILE, 'utf8'))
-          currentWorkspace = await resolveAllowedWorkspace(persisted?.workspace)
-        } catch {
-          // Missing/invalid state falls back to the launch cwd.
-        }
-      }
       if (SESSION_STATE_FILE) {
         try {
           const persisted = JSON.parse(await readFile(SESSION_STATE_FILE, 'utf8'))
@@ -135,13 +122,7 @@ async function resolveAllowedWorkspace(input) {
   return real
 }
 
-async function setWorkspace(real) {
-  if (WORKSPACE_STATE_FILE) {
-    await mkdir(dirname(WORKSPACE_STATE_FILE), { recursive: true })
-    const tmp = `${WORKSPACE_STATE_FILE}.tmp-${process.pid}`
-    await writeFile(tmp, `${JSON.stringify({ workspace: real })}\n`)
-    await rename(tmp, WORKSPACE_STATE_FILE)
-  }
+function setWorkspace(real) {
   currentWorkspace = real
 }
 
@@ -685,7 +666,7 @@ export function apply(ctx, config = {}) {
         bindSessionWorkspace(sessionId, real)
         await persistSessionWorkspaces()
       } else {
-        await setWorkspace(real)
+        setWorkspace(real)
       }
       // Retire live helpers so the next tool call rebuilds against the new root.
       for (const [id, entry] of capabilityHandles) {

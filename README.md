@@ -148,19 +148,18 @@ ChatGPT operates on a **switchable workspace root**, not your whole disk.
   the launch with a fix-it hint. `workspace_switch` may only retarget
   inside this subtree — realpath-checked, symlink escapes rejected;
   switching to the root itself widens the boundary to the whole subtree.
-- **Persistence:** the shared default is stored in
-  `home/storages/chatgpt-bridge/active-workspace.json` and survives
-  restarts — taking precedence over `WORKSPACE` (delete the file to fall
-  back to it). `workspace_switch` binds only the calling conversation —
-  keyed by the `x-openai-session` header ChatGPT sends per conversation
-  (`mcp-session-id` is the fallback) — so concurrent chats keep
-  independent roots, persisted in `session-workspaces.json` alongside
-  it, and fall back to the shared default until they switch.
-  `workspace_status` reports the calling conversation's root.
+- **Persistence:** `workspace_switch` binds only the calling
+  conversation — keyed by the `x-openai-session` header ChatGPT sends
+  per conversation (`mcp-session-id` is the fallback) — and the
+  bindings persist in `home/storages/chatgpt-bridge/session-workspaces.json`
+  across restarts. Conversations that never switched, and calls without
+  an identity, use the launch root (`WORKSPACE`). `workspace_status`
+  reports the calling conversation's root.
 - **Boundary:** sandboxed `bash`/`pwsh` writes stay inside the active
   root; the read/write/edit file tools follow their own access model.
-  Wrong root after a restart? `workspace_switch` again — or delete the
-  state file for a full reset (see architecture.md, Operations).
+  Wrong root after a restart? `workspace_switch` again — or delete
+  `session-workspaces.json` for a full reset (see architecture.md,
+  Operations).
 
 ## Credits
 
