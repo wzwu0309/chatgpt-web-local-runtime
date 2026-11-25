@@ -167,9 +167,31 @@ UUID),0 个真实行为差异。** 含冷启动 resume 验证。
 - 0.1.2 时代调试期残留的撕裂会话会导致 `SessionAlreadyExistsError` 掩盖
   resume 路径 —— 切换前生产环境应先清理或接受首轮 create 冲突自愈。
 
-### 剩余工作(Phase 4 收尾 + Phase 5)
+### Phase 5 完成(2026-11-25 15:59 切换)
 
-- [ ] remote_machine/remote_exec 实测(需远端 worker,本地验证范围外)
-- [ ] web_search/web_fetch 执行路径抽测(catalog 已注册,执行未测)
-- [ ] devin 插件加载确认(profile 内 @quonaro/dsh-plugin-devin@0.1.4)
-- [ ] 生产切换:版本钉版、install.sh 调整、切换回滚预案
+**生产已升级至 0.2.2-rc.5 并全量验证通过。**
+
+- 停机窗口:仅 host 重启数秒;gateway/cloudflared/Worker 全程未动(架构上
+  gateway 逐请求转发,host 恢复后链路自然复原)。
+- 生产 golden-path:28 字段逐字相同,1 个环境性差异(随机 UUID),0 真实差异。
+- 公网全链路 `https://dsh-gw.wzwu0309.workers.dev/readyz` → ok。
+- 切换方式:in-place npm install(运行时进程不受影响)+ 插件文件拷贝 +
+  外科式 host 重启(复刻 start.sh 启动行,未动 tunnel/gateway)。
+
+**回滚预案**(备份位于 `~/.dsh-mcp-gateway-backup-0.1.2-20261125/`):
+1. `cp -R 备份/dsh-runtime → ~/.dsh-mcp-gateway/deploy/dsh-runtime`(整树替换)
+2. `cp 备份/dsh-bridge-plugin/* → ~/.dsh-mcp-gateway/dsh-bridge-plugin/`(四插件同)
+3. 按 start.sh 同款启动行重启 host
+注意:0.2.x 期间产生的会话记录为 v4 zstd 格式,回滚后 0.1.2 无法读取 ——
+能力代理会话为一次性元数据,回滚后由 bridge 自动重建,无数据损失。
+
+**已知无害残留**:0.1.2 时代的能力代理会话在 store 中成为孤儿(hash 输入
+变更,永不命中),不占用运行资源;如需清理可删
+`~/data/workspace` 下对应 sessions 子目录。
+
+**无兼容代码原则**:本项目不为历史实现写兼容代码(AI 消费方自适应),
+persistence 快照访问等适配按 0.2.x 单一直接形状实现。
+
+- [x] remote_machine/job_list/web_fetch 执行路径已抽测通过
+- [ ] remote_exec 实测(需活远端 worker,日常使用中自然验证)
+- [ ] devin 端到端(需凭证,日常使用自然验证)
