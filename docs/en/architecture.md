@@ -81,8 +81,36 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
   (operator's own entry point); but once `workspace_switch` moves away
   from an out-of-bounds `WORKSPACE`, there is no way back through the
   tool.
-- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin. Switching binds only the calling conversation: the gateway forwards `x-openai-session` (ChatGPT's per-conversation header; `mcp-session-id` is the fallback for other clients) as `sessionId`, and the bridge keeps a session-keyed map persisted to `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` — concurrent conversations hold independent roots inside the allowed subtree, surviving restarts; calls without an identity share the launch root (`WORKSPACE` env). Persisted session entries are re-validated against the allowed subtree on load — out-of-bounds or missing paths are dropped; the map is capped at 256 bindings. A no-identity `workspace_switch` updates only the in-memory default for the process lifetime.
+- `workspace_switch {path}` / `workspace_status` — DSH tools registered by the bridge plugin. Switching binds only the calling conversation: the gateway forwards the session key produced by the client identity chain (see "Client identity chain" below), and the bridge keeps a session-keyed map persisted to `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` — concurrent conversations hold independent roots inside the allowed subtree, surviving restarts; calls without an identity share the launch root (`WORKSPACE` env). Persisted session entries are re-validated against the allowed subtree on load — out-of-bounds or missing paths are dropped; the map is capped at 256 bindings. A no-identity `workspace_switch` updates only the in-memory default for the process lifetime.
 - Switching does **not** mutate a session (DSH `cwd` is creation metadata); it retires the old helper and lazily creates/reuses a helper session keyed by the new cwd. Sandbox boundary = helper session `cwd`.
+
+## Client identity chain
+
+The gateway resolves every call's session key through an **ordered recognizer
+chain** (`src/dsh_mcp_gateway/identity.py`); the first hit wins, ordered from
+most to least specific:
+
+| # | Recognizer | Match | Session key | Persistence semantics |
+|---|---|---|---|---|
+| 1 | OpenAI | `x-openai-session` header | header value verbatim | per-conversation — each ChatGPT conversation gets its own workspace |
+| 2 | Gemini | user-agent starts with `Google` | `gemini/<oauth-client_id>` | shared per OAuth client |
+| 3 | OAuth principal | any other authenticated client | `oauth/<client_id>` | shared per OAuth client |
+| 4 | transport fallback | none of the above | `mcp-session-id` hex | ephemeral — bindings die with the connection |
+
+**Gemini behavior, measured 2026-11**: custom apps onboard through standard
+DCR + PKCE and refresh tokens proactively before expiry — the OAuth path works
+out of the box. The backend is distributed, though: turns of one conversation
+are routed across nodes that each hold their own MCP connection, so
+`mcp-session-id` is unstable and can never key a conversation; neither headers
+nor JSON-RPC bodies carry any per-conversation identifier (no `_meta`, no
+vendor extensions). One workspace binding shared by all Gemini conversations
+is therefore the design ceiling, not a defect: `workspace_switch` survives
+turns, conversations, and restarts, but parallel Gemini conversations cannot
+hold independent roots. Removing and re-adding the custom app in Gemini
+re-runs DCR with a fresh client_id, orphaning the binding — one more
+`workspace_switch` restores it. Recognizer output keys are the bridge's
+`sessionId` verbatim; the bridge has no platform concept, and adding a client
+means inserting one recognizer into the chain.
 
 ## Security model
 

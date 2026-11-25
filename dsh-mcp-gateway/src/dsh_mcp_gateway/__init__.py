@@ -13,6 +13,7 @@ from .harness_bridge import (
     tool_result_to_mcp,
     watch_tool_catalog,
 )
+from .identity import resolve_client_identity
 from .mcp_compat import disable_modern_subscriptions
 
 try:  # resolved lazily via get_type_hints; only the MCP server path dereferences it
@@ -26,15 +27,12 @@ _exec_log = logging.getLogger("dsh_mcp_gateway")
 
 
 def _session_id_from_context(ctx: Any) -> str | None:
-    """Conversation identity: ChatGPT sends a stable per-conversation
-    x-openai-session; mcp-session-id is the spec fallback other clients may
-    carry; ctx.session_id covers SDK-resolved sessions."""
-    session_id = None
-    request = getattr(getattr(ctx, "request_context", None), "request", None)
-    headers = getattr(request, "headers", None)
-    if headers:
-        session_id = headers.get("x-openai-session") or headers.get("mcp-session-id")
-    return session_id or getattr(ctx, "session_id", None)
+    """Session key forwarded to the bridge.  Resolution lives in
+    identity.resolve_client_identity: an ordered recognizer chain —
+    ChatGPT's per-conversation header, platform recognizers keyed by OAuth
+    principal, then the ephemeral transport session as last resort."""
+    identity = resolve_client_identity(ctx)
+    return identity.key if identity else None
 
 
 def build_mcp_server(
@@ -197,8 +195,14 @@ def build_mcp_server(
             default until changed via workspace_switch, which then persists for
             the whole conversation.
             """
-            session_id = _session_id_from_context(ctx)
-            _exec_log.info("dsh_tool_call session=%s name=%s", (session_id or '-')[:32], name)
+            identity = resolve_client_identity(ctx)
+            session_id = identity.key if identity else None
+            _exec_log.info(
+                "dsh_tool_call client=%s session=%s name=%s",
+                identity.client if identity else "-",
+                (session_id or "-")[:32],
+                name,
+            )
             return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
 
         @mcp.tool(name="dsh_skill_catalog", annotations=read_only)

@@ -82,8 +82,31 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
   失败。它**不受**允许根约束（运营者自有入口）；但
   `workspace_switch` 一旦从界外的 `WORKSPACE` 切走，就无法通过该
   工具切回。
-- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具。切换只绑定发起调用的 conversation:gateway 把 `x-openai-session`(ChatGPT 每会话头；其他客户端以 `mcp-session-id` 兜底）转发为 `sessionId`,bridge 的会话键 Map 持久化到 `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` —— 并发 conversation 在允许子树内各自持根，重启不丢；无身份的调用共享启动根(`WORKSPACE` env)。持久条目加载时按允许子树重校验 —— 越界或不存在的路径被丢弃；Map 上限 256 条。无身份的 `workspace_switch` 只改进程内的默认值，不落盘。
+- `workspace_switch {path}` / `workspace_status` —— bridge 插件注册的 DSH 工具。切换只绑定发起调用的 conversation:gateway 把客户端身份链(见下文"客户端身份链"一节)产出的会话键转发为 `sessionId`,bridge 的会话键 Map 持久化到 `$DSH_HOME/storages/chatgpt-bridge/session-workspaces.json` —— 并发 conversation 在允许子树内各自持根，重启不丢；无身份的调用共享启动根(`WORKSPACE` env)。持久条目加载时按允许子树重校验 —— 越界或不存在的路径被丢弃；Map 上限 256 条。无身份的 `workspace_switch` 只改进程内的默认值，不落盘。
 - 切换**不**修改会话（DSH `cwd` 是创建期元数据）；它退役旧 helper，并按新 cwd 惰性创建/复用 helper 会话。沙箱边界 = helper 会话 `cwd`。
+
+## 客户端身份链
+
+网关按**有序识别器链**(`src/dsh_mcp_gateway/identity.py`)解析每次调用的
+会话键,命中即中断,特异性从高到低:
+
+| 顺位 | 识别器 | 命中条件 | 会话键 | 持久化语义 |
+|---|---|---|---|---|
+| 1 | OpenAI | `x-openai-session` 头 | 头值原样 | 按会话隔离 —— ChatGPT 每会话独立工作区 |
+| 2 | Gemini | UA 以 `Google` 开头 | `gemini/<oauth-client_id>` | 按 OAuth 客户端共享 |
+| 3 | OAuth principal | 其他认证客户端 | `oauth/<client_id>` | 按 OAuth 客户端共享 |
+| 4 | 传输兜底 | 以上皆非 | `mcp-session-id` hex | ephemeral —— 绑定活不过连接 |
+
+**Gemini 的实测行为(2026-11 验证)**:自定义应用走标准 DCR + PKCE +
+refresh token 自动续期(到期前主动刷新,无需重新授权),OAuth 链路开箱即用。
+但其后端是分布式的 —— 同一对话的不同回合被路由到不同节点,各节点自持
+MCP 连接,`mcp-session-id` 既不稳定也无法键控会话;请求头与 JSON-RPC
+体内均无每会话标识(无 `_meta`、无厂商扩展)。因此 Gemini 全部对话共享
+一个工作区绑定是设计上限,不是缺陷:`workspace_switch` 跨回合、跨对话、
+跨重启均生效,但并行的多个 Gemini 对话不能各持工作区。在 Gemini 中删除
+并重新添加自定义应用会触发重新 DCR、更换 client_id,既有绑定随之孤立,
+重新 `workspace_switch` 一次即可。识别器输出键即 bridge 的 `sessionId`,
+bridge 本身无平台概念,新增客户端支持 = 向链中插入一个识别器。
 
 ## 安全模型
 
