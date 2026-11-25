@@ -2,13 +2,13 @@
   "name": "dsh-mcp-gateway-dsh-runtime",
   "private": true,
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.2-rc.1",
+    "@deepseek-ai/dsh": "0.2.2-rc.5",
     "koffi": "3.2.1",
     "playwright-core": "1.62.1",
     "pnpm": "10.34.5"
   },
   "allowScripts": {
-    "@deepseek-ai/dsh-subprocess-local@0.1.2-rc.1": true,
+    "@deepseek-ai/dsh-subprocess-local@0.2.2-rc.5": true,
     "@google/genai": false,
     "koffi@3.2.1": true,
     "node-pty@1.2.0-beta.15": true,
