@@ -459,10 +459,8 @@ export function apply(ctx, config = {}) {
         if (persistence) {
           const persisted = await persistence.list()
           assertActive()
-          // DSH 0.2.x: persistence.list() returns snapshots {header, revision, ...}
-          // instead of bare headers; normalize before matching.
-          const persistedHeaders = persisted.map(entry => entry && entry.header ? entry.header : entry)
-          const persistedHelper = persistedHeaders.find(header => header.id === helperSessionId)
+          // DSH 0.2.x: persistence.list() returns snapshots {header, revision, ...}.
+          const persistedHelper = persisted.find(snapshot => snapshot.header?.id === helperSessionId)?.header
           if (persistedHelper) {
             assertPersistedHelperHeader(persistedHelper, workspace, presetId)
             return agents.resume({
