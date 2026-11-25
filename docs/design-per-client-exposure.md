@@ -1,6 +1,6 @@
 # 设计草案:按客户端策略暴露工具格式与显式 workspace 信封
 
-- 状态: **实施中(①bridge/②gateway/③OAuth 已完成,④⑤待续)**
+- 状态: **实施中(①②③④已完成,⑤部署待续)**
 - 日期: 2026-11-25
 - 关联: 与 `upgrade-to-dsh-0.2.md` **正交**——两者独立分支、独立合并、互不为前置
 
@@ -245,9 +245,10 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
       迁移期不可分类旧行一律按已授权保留)+ refresh TTL 180d;well-known
       authorization-server metadata 对任意后缀服务,protected-resource metadata
       与 WWW-Authenticate resource_metadata 按实际挂载路径生成;
-- [ ] generic exposure 的 catalog 投影需与 0.2.x 执行面条件(toolSet/`when`)
-      保持一致求值——catalog 过滤不能只是名称黑名单,要与执行面同一解析路径
-      (升级适配 6 的直接教训)。
+- [x] generic exposure 的 catalog 投影已与 0.2.x 执行面条件(toolSet/`when`)
+      同路径求值:bridge catalog 通过 capability agent + `tools.resolve()` 取
+      admitted toolSet,不再是静态注册清单;实证前静态 catalog 含 web_search,
+      修正后该不可用条件工具从 catalog 消失,执行/发现恢复一致。
 
 ## 9. 实施注记
 
@@ -260,8 +261,11 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   exposure 对象/三挂载路由/教义文案/健康信号完成(commit 4900e57;
   `/chatgpt/mcp` ChatgptExposure,`/gemini/mcp` 与 `/mcp` GenericExposure,
   `--root-mcp-exposure chatgpt` 供阶段一切换);✅ ③OAuth 三件套完成
-  (well-known 任意后缀/分层回收/refresh 180d,本提交);⬜ ④golden-path
-  双侧验证;⬜ ⑤两阶段部署。④⑤ 待续,按本文档规格实施即可。
+  (well-known 任意后缀/分层回收/refresh 180d,commit 226f7ff);✅ ④
+  golden-path 双侧验证完成(隔离 DSH 实例上 `validation/golden-path.mjs`
+  全探针通过,`validation/exposure-golden-path.mjs` 14 项检查通过;
+  显式 workspace 路由/越界拒绝/缺省回落/序列一致性/绑定表零写入均实证);
+  ⬜ ⑤两阶段部署。⑤ 待续,按本文档规格实施即可。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。

@@ -612,20 +612,31 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  function externalToolSchemas(scope) {
-    return capabilityProfile.project(ctx.tools.schemas(scope))
+  async function externalToolSchemas(signal) {
+    const activationSignal = signal ?? AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)
+    const capability = await acquireCapabilityAgent(activationSignal)
+    try {
+      const toolSet = await ctx.tools.resolve({
+        agent: capability.agent,
+        modelSelection: { provider: EXTERNAL_PROVIDER, model: EXTERNAL_MODEL },
+        signal: activationSignal,
+      })
+      try {
+        return capabilityProfile.project(ctx.tools.schemas(capability.agent, toolSet))
+      } finally {
+        toolSet.dispose()
+      }
+    } finally {
+      await capability.release()
+    }
   }
 
-  async function assertExternalToolAvailable(toolName, binding = true) {
+  function assertExternalToolProfile(toolName, binding = true) {
     if (!binding && BINDING_DEPENDENT_TOOLS.has(toolName)) {
       throw new BridgeRequestError(400, 'tool_unavailable', `tool requires session binding participation: ${toolName}`)
     }
     if (!capabilityProfile.allows(toolName)) {
       throw new BridgeRequestError(404, 'tool_unavailable', 'tool is unavailable in the external ChatGPT capability profile')
-    }
-    const { scope } = await standingLookup()
-    if (!externalToolSchemas(scope).some(schema => schema.name === toolName)) {
-      throw new BridgeRequestError(404, 'tool_unavailable', 'tool is unavailable in the current DSH preset')
     }
   }
 
@@ -722,8 +733,7 @@ export function apply(ctx, config = {}) {
         } else if (req.url && new URL(req.url, 'http://localhost').searchParams.get('binding') === 'off') {
           binding = false
         }
-        const { scope } = await standingLookup()
-        let tools = externalToolSchemas(scope)
+        let tools = await externalToolSchemas()
         if (!binding) tools = tools.filter(schema => !BINDING_DEPENDENT_TOOLS.has(schema.name))
         json(res, 200, {
           tools,
@@ -838,11 +848,18 @@ export function apply(ctx, config = {}) {
         // Envelope workspace is a routing key, never a tool argument: validated
         // against the allowed root exactly like workspace_switch targets.
         let explicitWorkspace = null
-        if (typeof payload?.workspace === 'string' && payload.workspace.trim()) {
-          explicitWorkspace = await resolveAllowedWorkspace(payload.workspace)
+        if (payload?.workspace !== undefined) {
+          if (typeof payload.workspace !== 'string' || !payload.workspace.trim()) {
+            throw new BridgeRequestError(400, 'invalid_workspace', 'workspace must be a non-empty string when supplied')
+          }
+          try {
+            explicitWorkspace = await resolveAllowedWorkspace(payload.workspace)
+          } catch (error) {
+            throw new BridgeRequestError(400, 'invalid_workspace', error instanceof Error ? error.message : String(error))
+          }
         }
         const requestContext = { sessionId, explicitWorkspace, binding }
-        await assertExternalToolAvailable(toolName, binding)
+        assertExternalToolProfile(toolName, binding)
         capability = await awaitWithinToolCallLifetime(
           callContext.run(requestContext, () => acquireCapabilityAgent(lifetime.signal)),
           lifetime,
@@ -863,6 +880,9 @@ export function apply(ctx, config = {}) {
         })
         let batch
         try {
+          if (!ctx.tools.executable(toolName, capability.agent, toolSet)) {
+            throw new BridgeRequestError(404, 'tool_unavailable', 'tool is unavailable in the current DSH preset')
+          }
           batch = await awaitWithinToolCallLifetime(
             callContext.run(requestContext, () => ctx.tools.execute({
               calls: [{
