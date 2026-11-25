@@ -253,6 +253,11 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
 - 切换两阶段(owner 定稿):阶段一部署全部代码但 /mcp 维持 ChatGPT 行为,
   operator 迁移连接器至 /chatgpt/mcp 并验证;阶段二小部署翻 /mcp 为通用面。
   全程零破损窗口;"暂不动"是部署排序,非兼容代码。
+- **实施进度(2026-11-25)**:✅ ①bridge 完成(commit a429939,信封
+  workspace+优先级链+binding 轴过滤+sessionId 缺席加固);⬜ ②gateway
+  exposure 对象/挂载路由/教义文案;⬜ ③OAuth 三件套(well-known 任意后缀/
+  分层回收/refresh 180d);⬜ ④golden-path 双侧验证;⬜ ⑤两阶段部署。
+  ②③④⑤ 待续,按本文档规格实施即可。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。
