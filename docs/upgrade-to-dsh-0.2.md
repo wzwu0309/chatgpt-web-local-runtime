@@ -121,3 +121,55 @@ webServer 5 点。**破坏集中于 tools.execute 一条线**;agents `create/res
 总计约 **2.5-3.5 个工作日**(接触面普查后下调:breaking 集中于 tools.execute
 一条线,agents/session/skills 已验证稳定)。剩余不确定性主要在 vendored 三插件
 (R1)—— 若审查发现破坏严重,预算上调 1-2 天。
+
+## 进度日志(2026-11-25)
+
+### Phase 0-3 完成,Phase 4 本地验证全绿
+
+**并行测试环境**:`~/.dsh-mcp-gateway-next`(DSH 0.2.2-rc.5,端口 3082，独立
+DSH_HOME 与工作区 `~/data/workspace/default`)。生产环境全程未受影响。
+
+**golden-path 对照结果:25 字段逐字相同,4 个环境性差异(路径前缀/随机
+UUID),0 个真实行为差异。** 含冷启动 resume 验证。
+
+### 实际发生的 breaking 适配(全部在 bridge 插件,vendored 三插件零改动)
+
+| # | breaking 点 | 适配 |
+|---|---|---|
+| 1 | `execute()` batch 化：`{calls:[{type:'tool-call',id,name,arguments}]}`,arguments 为 raw JSON 字符串，`additionalContexts` 上移到 batch 层 | `/call` 端点 batch-of-one 适配 |
+| 2 | `agentPresets.standingKeyFor` 移除，改租约制 `acquireScope` | 每 preset 缓存一个租约 = 原 standing mount 语义 |
+| 3 | 预设系统文件支撑改为注册表支撑，`resolve()` 只返 `{id,broken?}`,`.path` 消失 | 指纹改 hash `compositionInventory()`(语义更准) |
+| 4 | `persistence.list()` 从 headers 改返 snapshots `{header,revision}` | 查找前规范化 |
+| 5 | 0.2.x 新增插件兼容性强制：peerDependencies 精确钉版会被禁用(响亮报错，非静默) | peer 改 `^0.2.0-rc.2`(社区范本) |
+| 6 | 0.2.x 新增条件注册(`when` 子句,0.1.x 为零)：带条件的工具(web_fetch/web_search 按模型 provider 的就绪性)只能经**解析过的 toolSet** 执行;`executeToolBatch` 不自行解析条件——上游由 AgentLoop 每步 resolve,bridge 直调必须同样 resolve+传 toolSet+dispose | `/call` 端点执行前 `ctx.tools.resolve({agent, modelSelection, signal})` |
+
+### 语义差异备忘(非回归)
+
+- **web_search 在无凭证部署下执行面隐藏**:0.2.x 按搜索后端就绪性条件注册;
+  本部署刻意无 DEEPSEEK_API_KEY,0.1.2 下它可见但调用必失败,0.2.2 下执行面
+  不可见 —— 等效且更干净。注意:catalog(standing scope 直读)仍会列出它,
+  因为目录读取不求值 when —— catalog/execution 存在轻微不一致,如需严格一致
+  可后续让 catalog 也走 toolSet 投影(非必须,生产 UX 等效)。
+- remote_machine/job_list/web_fetch 执行路径已抽测通过;remote_exec 需活
+  远端 worker,属本地验证范围外。
+
+### 验证过程中发现但无需行动的事项
+
+- vendored 三插件(task-state/shell-session/remote-worker)在 0.2.2 下零修改
+  注册并行为对齐 —— 它们的 seam 接触面(terminals/tools.register/webServer)
+  全部稳定。
+- bash 工具 schema 新增 `description` 必填字段(上游演进,bridge 透传无感,
+  catalog 自动反映)。
+- npm install 需用 npmmirror 镜像(registry.npmjs.org 本机不可达);
+  koffi/node-pty 原生构建脚本被 npm install-scripts 拦截，但 macOS 上
+  node-pty prebuilds 自足，koffi 非必需 —— 生产切换时按现有 install.sh
+  同款处理即可。
+- 0.1.2 时代调试期残留的撕裂会话会导致 `SessionAlreadyExistsError` 掩盖
+  resume 路径 —— 切换前生产环境应先清理或接受首轮 create 冲突自愈。
+
+### 剩余工作(Phase 4 收尾 + Phase 5)
+
+- [ ] remote_machine/remote_exec 实测(需远端 worker,本地验证范围外)
+- [ ] web_search/web_fetch 执行路径抽测(catalog 已注册,执行未测)
+- [ ] devin 插件加载确认(profile 内 @quonaro/dsh-plugin-devin@0.1.4)
+- [ ] 生产切换:版本钉版、install.sh 调整、切换回滚预案

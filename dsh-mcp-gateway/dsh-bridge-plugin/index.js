@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync, statSync } from 'node:fs'
-import { mkdir, open, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 
@@ -14,7 +14,6 @@ const PREFIX = '/api/chatgpt-bridge'
 const MAX_BODY_BYTES = 1_000_000
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 const MAX_MATERIALIZED_IMAGE_BYTES = 12 * 1024 * 1024
-const MAX_PRESET_BYTES = 4 * 1024 * 1024
 const TOOL_CALL_TIMEOUT_MS = 120_000
 const EXTERNAL_PROVIDER = 'chatgpt-web-external'
 const EXTERNAL_MODEL = 'chatgpt-web'
@@ -128,45 +127,29 @@ async function resolveAllowedWorkspace(input) {
   return real
 }
 
+
+// DSH 0.2.x: presets are registry-backed, not file-backed — there is no preset
+// file path to fingerprint. The composition inventory (declared plugin rows plus
+// activation diagnostics) is the closest semantic replacement: it changes exactly
+// when the effective composition changes.
+async function compositionStamp(presets, presetId) {
+  const inventory = await presets.compositionInventory()
+  const rows = inventory.filter(row => row && row.id === presetId)
+  const digest = createHash('sha256').update(JSON.stringify(rows)).digest('hex')
+  return { digest, size: rows.length, mtimeMs: 0 }
+}
+
 function setWorkspace(real) {
   currentWorkspace = real
 }
 
-async function presetStamp(path) {
-  const handle = await open(path, 'r')
-  try {
-    const metadata = await handle.stat()
-    if (metadata.size > MAX_PRESET_BYTES) {
-      throw new Error('DSH preset exceeds the bridge fingerprint size limit')
-    }
-    const digest = createHash('sha256')
-    const chunk = Buffer.allocUnsafe(64 * 1024)
-    let size = 0
-    while (true) {
-      const { bytesRead } = await handle.read(chunk, 0, chunk.length, null)
-      if (bytesRead === 0) break
-      size += bytesRead
-      if (size > MAX_PRESET_BYTES) {
-        throw new Error('DSH preset exceeds the bridge fingerprint size limit')
-      }
-      digest.update(chunk.subarray(0, bytesRead))
-    }
-    if (size !== metadata.size) {
-      throw new Error('DSH preset changed while computing its bridge fingerprint')
-    }
-    return { mtimeMs: metadata.mtimeMs, size, digest: digest.digest('hex') }
-  } finally {
-    await handle.close()
-  }
-}
-
 function samePresetStamp(left, right) {
-  return left.mtimeMs === right.mtimeMs && left.size === right.size && left.digest === right.digest
+  return left.digest === right.digest && left.size === right.size
 }
 
-function capabilitySessionId(cwd, presetId, presetPath, stamp) {
+function capabilitySessionId(cwd, presetId, stamp) {
   const suffix = createHash('sha256')
-    .update(JSON.stringify([cwd, presetId, presetPath, stamp.mtimeMs, stamp.size, stamp.digest]))
+    .update(JSON.stringify([cwd, presetId, stamp.digest]))
     .digest('hex')
     .slice(0, 24)
   return `${CAPABILITY_SESSION_PREFIX}-${suffix}`
@@ -446,12 +429,13 @@ export function apply(ctx, config = {}) {
     const presetId = presets.defaultId
     const preset = await presets.resolve(presetId)
     assertActive()
-    const stamp = await presetStamp(preset.path)
+    if (preset?.broken) throw new Error(`DSH agent preset ${presetId} is broken: ${preset.broken}`)
+    const stamp = await compositionStamp(presets, presetId)
     assertActive()
     if (presets.defaultId !== presetId) return acquireCapabilityAgent(signal)
     await ensureWorkspaceLoaded()
     const workspace = callWorkspace()
-    const helperSessionId = capabilitySessionId(workspace, presetId, preset.path, stamp)
+    const helperSessionId = capabilitySessionId(workspace, presetId, stamp)
 
     let entry = capabilityHandles.get(helperSessionId)
     if (entry?.disposePromise) {
@@ -465,18 +449,20 @@ export function apply(ctx, config = {}) {
         model: EXTERNAL_MODEL,
       }
       const setup = async agentCtx => {
-        const mountedPreset = await presets.mount(agentCtx, presetId)
-        const mountedStamp = await presetStamp(mountedPreset.path)
-        if (mountedPreset.path !== preset.path || !samePresetStamp(stamp, mountedStamp)) {
-          throw new Error('DSH preset composition changed while creating the bridge capability agent')
-        }
+        // 0.2.x mount pins one registry generation through retain+bind, so the
+        // mounted revision is internally consistent; post-acquire validation
+        // below still re-verifies the composition fingerprint.
+        await presets.mount(agentCtx, presetId)
       }
       const promise = (async () => {
         const persistence = ctx.get('sessionPersistence')
         if (persistence) {
           const persisted = await persistence.list()
           assertActive()
-          const persistedHelper = persisted.find(header => header.id === helperSessionId)
+          // DSH 0.2.x: persistence.list() returns snapshots {header, revision, ...}
+          // instead of bare headers; normalize before matching.
+          const persistedHeaders = persisted.map(entry => entry && entry.header ? entry.header : entry)
+          const persistedHelper = persistedHeaders.find(header => header.id === helperSessionId)
           if (persistedHelper) {
             assertPersistedHelperHeader(persistedHelper, workspace, presetId)
             return agents.resume({
@@ -528,11 +514,9 @@ export function apply(ctx, config = {}) {
         await maybeDisposeCapabilityEntry(helperSessionId, entry)
         return acquireCapabilityAgent(signal)
       }
-      const currentPreset = await presets.resolve(presetId)
-      const currentStamp = await presetStamp(currentPreset.path)
+      const currentStamp = await compositionStamp(presets, presetId)
       if (
         presets.defaultId !== presetId
-        || currentPreset.path !== preset.path
         || !samePresetStamp(stamp, currentStamp)
       ) {
         entry.stale = true
@@ -582,13 +566,31 @@ export function apply(ctx, config = {}) {
     }
   }, 'dsh-chatgpt-bridge.capability-agent')
 
+  // DSH 0.2.x replaced standingKeyFor with lease-based acquireScope:
+  // the registry keeps a generation alive while users>0, so caching one lease
+  // per preset id reproduces the 0.1.x standing-mount semantics exactly.
+  const standingLeases = new Map()
+  async function standingScopeKey(presets, presetId) {
+    const cached = standingLeases.get(presetId)
+    if (cached) return cached.key
+    const lease = await presets.acquireScope(presetId)
+    standingLeases.set(presetId, lease)
+    return lease.key
+  }
+  ctx.effect(() => () => {
+    for (const lease of standingLeases.values()) {
+      void lease[Symbol.asyncDispose]?.()
+    }
+    standingLeases.clear()
+  }, 'dsh-chatgpt-bridge.standing-leases')
+
   async function standingLookup() {
     const presets = ctx.get('agentPresets')
     if (!presets) {
       throw new Error('DSH agentPresets service is required for bridge discovery')
     }
     const presetId = presets.defaultId
-    const scope = await presets.standingKeyFor(presetId)
+    const scope = await standingScopeKey(presets, presetId)
     await ensureWorkspaceLoaded()
     return {
       scope,
@@ -817,17 +819,44 @@ export function apply(ctx, config = {}) {
           lateCapability => lateCapability.release(),
         )
         if (lifetime.disconnected.aborted) return
-        const result = await awaitWithinToolCallLifetime(
-          callContext.run({ sessionId }, () => ctx.tools.execute({
-            callId: `chatgpt-${randomUUID()}`,
-            name: toolName,
-            arguments: toolArguments,
-            signal: lifetime.signal,
-            agent: capability.agent,
-          })),
-          lifetime,
-          () => {},
-        )
+        // DSH 0.2.x batch execute: single call expressed as a one-element batch.
+        // arguments is a raw JSON string on the wire shape; additionalContexts
+        // moved to batch level and is folded back onto the single result below.
+        // Conditionally-registered tools (when: clauses, e.g. web_fetch/web_search
+        // keyed on model provider readiness) are only executable through a
+        // resolved toolSet — upstream the AgentLoop resolves it per step, so the
+        // bridge must do the same for its direct executions.
+        const toolSet = await ctx.tools.resolve({
+          agent: capability.agent,
+          modelSelection: { provider: EXTERNAL_PROVIDER, model: EXTERNAL_MODEL },
+          signal: lifetime.signal,
+        })
+        let batch
+        try {
+          batch = await awaitWithinToolCallLifetime(
+            callContext.run({ sessionId }, () => ctx.tools.execute({
+              calls: [{
+                type: 'tool-call',
+                id: `chatgpt-${randomUUID()}`,
+                name: toolName,
+                arguments: JSON.stringify(toolArguments),
+              }],
+              signal: lifetime.signal,
+              agent: capability.agent,
+              toolSet,
+            })),
+            lifetime,
+            () => {},
+          )
+        } finally {
+          toolSet.dispose()
+        }
+        const settled = batch?.results?.[0]
+        if (!settled) throw new Error('tool call produced no result in batch')
+        const result = {
+          ...settled.result,
+          ...(batch.additionalContexts !== undefined ? { additionalContexts: batch.additionalContexts } : {}),
+        }
         if (lifetime.disconnected.aborted) return
         const materialized = await awaitWithinToolCallLifetime(
           materializeToolContent(ctx, result),
