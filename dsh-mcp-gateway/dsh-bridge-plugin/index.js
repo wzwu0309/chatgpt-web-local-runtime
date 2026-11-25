@@ -54,8 +54,11 @@ function sessionIdOf(payload) {
     : null
 }
 
-function activeWorkspaceFor(sessionId) {
-  if (sessionId) {
+// Resolution order: explicit envelope workspace (validated per request) >
+// session binding (only when the caller participates in binding) > launch root.
+function activeWorkspaceFor(sessionId, explicitWorkspace, binding = true) {
+  if (explicitWorkspace) return explicitWorkspace
+  if (binding && sessionId) {
     const scoped = sessionWorkspaces.get(sessionId)
     if (scoped) return scoped
   }
@@ -63,7 +66,17 @@ function activeWorkspaceFor(sessionId) {
 }
 
 function callWorkspace() {
-  return activeWorkspaceFor(callContext.getStore()?.sessionId)
+  const store = callContext.getStore()
+  return activeWorkspaceFor(store?.sessionId, store?.explicitWorkspace, bindingParticipates(store))
+}
+
+// Tools whose semantics anchor to session identity / the binding table. They
+// are excluded from catalog and rejected at execution when the caller surface
+// does not participate in binding (binding: false).
+const BINDING_DEPENDENT_TOOLS = new Set(['workspace_switch', 'workspace_status', 'task_state'])
+
+function bindingParticipates(store) {
+  return store?.binding !== false
 }
 
 function bindingSource() {
@@ -603,7 +616,10 @@ export function apply(ctx, config = {}) {
     return capabilityProfile.project(ctx.tools.schemas(scope))
   }
 
-  async function assertExternalToolAvailable(toolName) {
+  async function assertExternalToolAvailable(toolName, binding = true) {
+    if (!binding && BINDING_DEPENDENT_TOOLS.has(toolName)) {
+      throw new BridgeRequestError(400, 'tool_unavailable', `tool requires session binding participation: ${toolName}`)
+    }
     if (!capabilityProfile.allows(toolName)) {
       throw new BridgeRequestError(404, 'tool_unavailable', 'tool is unavailable in the external ChatGPT capability profile')
     }
@@ -665,12 +681,11 @@ export function apply(ctx, config = {}) {
         }
         return { workspace: real, changed: false }
       }
-      if (sessionId) {
-        bindSessionWorkspace(sessionId, real)
-        await persistSessionWorkspaces()
-      } else {
-        setWorkspace(real)
+      if (!sessionId) {
+        throw new Error('session identity missing; workspace binding is unavailable — pass the workspace envelope parameter explicitly per call instead')
       }
+      bindSessionWorkspace(sessionId, real)
+      await persistSessionWorkspaces()
       // Retire live helpers so the next tool call rebuilds against the new root.
       for (const [id, entry] of capabilityHandles) {
         entry.stale = true
@@ -698,11 +713,20 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: `${PREFIX}/tools`,
-    handler: async (_req, res) => {
+    handler: async (req, res) => {
       try {
+        let binding = true
+        if (req.method === 'POST') {
+          const payload = await readJson(req).catch(() => null)
+          if (payload?.binding === false) binding = false
+        } else if (req.url && new URL(req.url, 'http://localhost').searchParams.get('binding') === 'off') {
+          binding = false
+        }
         const { scope } = await standingLookup()
+        let tools = externalToolSchemas(scope)
+        if (!binding) tools = tools.filter(schema => !BINDING_DEPENDENT_TOOLS.has(schema.name))
         json(res, 200, {
-          tools: externalToolSchemas(scope),
+          tools,
           scope: 'dsh-preset-standing',
           capabilityProfile: capabilityProfile.id,
         })
@@ -810,9 +834,17 @@ export function apply(ctx, config = {}) {
           throw new BridgeRequestError(400, 'invalid_request', 'arguments must be an object when supplied')
         }
         const sessionId = sessionIdOf(payload)
-        await assertExternalToolAvailable(toolName)
+        const binding = payload?.binding !== false
+        // Envelope workspace is a routing key, never a tool argument: validated
+        // against the allowed root exactly like workspace_switch targets.
+        let explicitWorkspace = null
+        if (typeof payload?.workspace === 'string' && payload.workspace.trim()) {
+          explicitWorkspace = await resolveAllowedWorkspace(payload.workspace)
+        }
+        const requestContext = { sessionId, explicitWorkspace, binding }
+        await assertExternalToolAvailable(toolName, binding)
         capability = await awaitWithinToolCallLifetime(
-          callContext.run({ sessionId }, () => acquireCapabilityAgent(lifetime.signal)),
+          callContext.run(requestContext, () => acquireCapabilityAgent(lifetime.signal)),
           lifetime,
           lateCapability => lateCapability.release(),
         )
@@ -832,7 +864,7 @@ export function apply(ctx, config = {}) {
         let batch
         try {
           batch = await awaitWithinToolCallLifetime(
-            callContext.run({ sessionId }, () => ctx.tools.execute({
+            callContext.run(requestContext, () => ctx.tools.execute({
               calls: [{
                 type: 'tool-call',
                 id: `chatgpt-${randomUUID()}`,
