@@ -822,20 +822,35 @@ export function apply(ctx, config = {}) {
         // DSH 0.2.x batch execute: single call expressed as a one-element batch.
         // arguments is a raw JSON string on the wire shape; additionalContexts
         // moved to batch level and is folded back onto the single result below.
-        const batch = await awaitWithinToolCallLifetime(
-          callContext.run({ sessionId }, () => ctx.tools.execute({
-            calls: [{
-              type: 'tool-call',
-              id: `chatgpt-${randomUUID()}`,
-              name: toolName,
-              arguments: JSON.stringify(toolArguments),
-            }],
-            signal: lifetime.signal,
-            agent: capability.agent,
-          })),
-          lifetime,
-          () => {},
-        )
+        // Conditionally-registered tools (when: clauses, e.g. web_fetch/web_search
+        // keyed on model provider readiness) are only executable through a
+        // resolved toolSet — upstream the AgentLoop resolves it per step, so the
+        // bridge must do the same for its direct executions.
+        const toolSet = await ctx.tools.resolve({
+          agent: capability.agent,
+          modelSelection: { provider: EXTERNAL_PROVIDER, model: EXTERNAL_MODEL },
+          signal: lifetime.signal,
+        })
+        let batch
+        try {
+          batch = await awaitWithinToolCallLifetime(
+            callContext.run({ sessionId }, () => ctx.tools.execute({
+              calls: [{
+                type: 'tool-call',
+                id: `chatgpt-${randomUUID()}`,
+                name: toolName,
+                arguments: JSON.stringify(toolArguments),
+              }],
+              signal: lifetime.signal,
+              agent: capability.agent,
+              toolSet,
+            })),
+            lifetime,
+            () => {},
+          )
+        } finally {
+          toolSet.dispose()
+        }
         const settled = batch?.results?.[0]
         if (!settled) throw new Error('tool call produced no result in batch')
         const result = {
