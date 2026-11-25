@@ -1,6 +1,6 @@
 # 设计草案:按客户端策略暴露工具格式与显式 workspace 信封
 
-- 状态: **实施中(①②③④完成,⑤阶段一已部署,等待连接器迁移/阶段二)**
+- 状态: **已完成并上线(两阶段切换完成)**
 - 日期: 2026-11-25
 - 关联: 与 `upgrade-to-dsh-0.2.md` **正交**——两者独立分支、独立合并、互不为前置
 
@@ -265,13 +265,15 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   golden-path 双侧验证完成(隔离 DSH 实例上 `validation/golden-path.mjs`
   全探针通过,`validation/exposure-golden-path.mjs` 14 项检查通过;
   显式 workspace 路由/越界拒绝/缺省回落/序列一致性/绑定表零写入均实证);
-  ◐ ⑤两阶段部署:阶段一已部署(commit 4f05e6d 后;`/mcp` 保持
+  ✅ ⑤两阶段部署:阶段一已部署(commit 4f05e6d 后;`/mcp` 保持
   ChatGPT exposure,`/chatgpt/mcp`/`/gemini/mcp` 已公网在线,OAuth
   discovery/401/healthz 通过,生产 bridge exposure golden-path 14 项通过,
   oauth.sqlite3 生命周期迁移确认 4/4 客户端保留为 authorized)。注意:
   start.sh 会复用健康 DSH host,代码刷新后需外科式重启 host 才能加载新
   bridge 插件——本次已执行。待 operator 迁移 ChatGPT connector 至
-  `/chatgpt/mcp` 并验证;之后设 `DSH_MCP_ROOT_MCP_EXPOSURE=generic` 做阶段二。
+  `/chatgpt/mcp` 并验证;阶段二已完成:`DSH_MCP_ROOT_MCP_EXPOSURE=generic`
+  生效,线上 wire-shape 实证 `/mcp`/`/gemini/mcp` 暴露 workspace 参数,
+  `/chatgpt/mcp` 不暴露。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。
