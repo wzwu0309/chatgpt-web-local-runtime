@@ -134,11 +134,8 @@ catalog/workspaceParam 隐藏),是对 ChatGPT 冻结行为的特化。
 mounts(operator 配置,仅 path → 实现名,本身不含行为):
   /chatgpt/mcp  → ChatgptExposure   # 通用核心 + 绑定套件
   /gemini/mcp   → GenericExposure   # 通用实现;未来新客户端挂载即复用
-  /mcp          → GenericExposure   # owner 定稿:旧路径语义新生为通用面,
-                                    #   非兼容保留。三重作用:逃生舱(故障时连接器
-                                    #   指回此 canonical URL)/迁移强制(语义已变,
-                                    #   ChatGPT 必须迁走)/发现友好(最易猜的路径
-                                    #   服务最通用的实现)。与 /gemini/mcp 共享同一
+  /mcp          → GenericExposure   # canonical 通用面;最易猜的路径服务
+                                    #   最通用的实现。与 /gemini/mcp 共享同一
                                     #   实现对象实例,成本为零
 
 exposure 接口的多态面(差异全部在此,其余全共享):
@@ -273,7 +270,9 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   bridge 插件——本次已执行。待 operator 迁移 ChatGPT connector 至
   `/chatgpt/mcp` 并验证;阶段二已完成:`DSH_MCP_ROOT_MCP_EXPOSURE=generic`
   生效,线上 wire-shape 实证 `/mcp`/`/gemini/mcp` 暴露 workspace 参数,
-  `/chatgpt/mcp` 不暴露。
+  `/chatgpt/mcp` 不暴露。切换完成后 transitional `--root-mcp-exposure`
+  与 `DSH_MCP_ROOT_MCP_EXPOSURE` 已作为废弃逻辑移除,`/mcp` 固定为
+  canonical generic 面。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。

@@ -26,14 +26,10 @@ $CLOUDFLARED   = if ($env:CLOUDFLARED)   { $env:CLOUDFLARED }   else { "$GwHome\
 $DSH_BIN       = "$GwHome\deploy\dsh-runtime\node_modules\.bin\dsh.cmd"
 $PATCH_TMPL    = "$GwHome\deploy\dsh\chatgpt-bridge.windows.cordis.yml"
 $STATE_DIR     = "$GwHome\state"
-$ROOT_MCP_EXPOSURE = if ($env:DSH_MCP_ROOT_MCP_EXPOSURE) { $env:DSH_MCP_ROOT_MCP_EXPOSURE } else { 'chatgpt' }
 $LOG_DIR       = $env:TEMP
 
 if (-not $env:DSH_MCP_GATEWAY_ADMIN_PIN) {
     Write-Error 'env.conf must set DSH_MCP_GATEWAY_ADMIN_PIN'; exit 1
-}
-if ($ROOT_MCP_EXPOSURE -notin @('chatgpt', 'generic')) {
-    Write-Error "DSH_MCP_ROOT_MCP_EXPOSURE must be 'chatgpt' or 'generic'"; exit 1
 }
 if (-not (Test-Path $WORKSPACE_ALLOWED_ROOT -PathType Container)) {
     Write-Error "WORKSPACE_ALLOWED_ROOT '$WORKSPACE_ALLOWED_ROOT' does not exist - create it (New-Item -ItemType Directory -Force '$WORKSPACE_ALLOWED_ROOT') or set WORKSPACE_ALLOWED_ROOT in env.conf"; exit 1
@@ -127,7 +123,7 @@ Clear-Content "$LOG_DIR\dsh-mcp-gateway.err.log" -ErrorAction SilentlyContinue
 $gatewayExe = "$GwHome\.venv\Scripts\dsh-mcp-gateway.exe"
 $tunnelHost = $TUNNEL_URL -replace '^https://', ''
 Start-Process -FilePath $gatewayExe -WindowStyle Hidden `
-    -ArgumentList '--dsh-harness-url',"http://127.0.0.1:$DSH_HOST_PORT",'--public-base-url',$PUBLIC_URL,'--allowed-host',$tunnelHost,'--state-dir',$STATE_DIR,'--root-mcp-exposure',$ROOT_MCP_EXPOSURE `
+    -ArgumentList '--dsh-harness-url',"http://127.0.0.1:$DSH_HOST_PORT",'--public-base-url',$PUBLIC_URL,'--allowed-host',$tunnelHost,'--state-dir',$STATE_DIR `
     -RedirectStandardOutput "$LOG_DIR\dsh-mcp-gateway.launch.log" -RedirectStandardError "$LOG_DIR\dsh-mcp-gateway.err.log"
 Start-Sleep 4
 & curl.exe -sf --max-time 15 @curlProxy "$PUBLIC_URL/.well-known/oauth-authorization-server" | Out-Null
@@ -136,5 +132,5 @@ if ($LASTEXITCODE -eq 0) { Write-Host '  ok' } else { Write-Host '  warn: public
 Write-Host ''
 Write-Host "ChatGPT connector URL : $PUBLIC_URL/chatgpt/mcp"
 Write-Host "Gemini connector URL  : $PUBLIC_URL/gemini/mcp"
-Write-Host "Root MCP URL          : $PUBLIC_URL/mcp (exposure: $ROOT_MCP_EXPOSURE)"
+Write-Host "Root MCP URL          : $PUBLIC_URL/mcp"
 Write-Host "Owner PIN             : $env:DSH_MCP_GATEWAY_ADMIN_PIN"

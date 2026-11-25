@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from dsh_mcp_gateway.cli import build_parser, main
+from dsh_mcp_gateway.cli import main
 from dsh_mcp_gateway.exposure import ChatgptExposure, GenericExposure
 
 
@@ -19,12 +19,6 @@ class CliTests(unittest.TestCase):
             "http://127.0.0.1:3080",
             *extra,
         ]
-
-    def test_root_exposure_defaults_to_generic_and_stage_one_override_is_available(self) -> None:
-        args = build_parser().parse_args(self.harness_args())
-        self.assertEqual(args.root_mcp_exposure, "generic")
-        transitional = build_parser().parse_args(self.harness_args("--root-mcp-exposure", "chatgpt"))
-        self.assertEqual(transitional.root_mcp_exposure, "chatgpt")
 
     def test_main_builds_multi_mount_gateway_app(self) -> None:
         captured = {}
@@ -56,8 +50,6 @@ class CliTests(unittest.TestCase):
                 self.harness_args(
                     "--state-dir",
                     str(Path(tmp).resolve()),
-                    "--root-mcp-exposure",
-                    "chatgpt",
                 )
             )
 
@@ -72,7 +64,7 @@ class CliTests(unittest.TestCase):
         )
         self.assertIsInstance(captured["mounts"]["/chatgpt/mcp"], ChatgptExposure)
         self.assertIsInstance(captured["mounts"]["/gemini/mcp"], GenericExposure)
-        self.assertIs(captured["mounts"]["/mcp"], captured["mounts"]["/chatgpt/mcp"])
+        self.assertIs(captured["mounts"]["/mcp"], captured["mounts"]["/gemini/mcp"])
 
 
 if __name__ == "__main__":

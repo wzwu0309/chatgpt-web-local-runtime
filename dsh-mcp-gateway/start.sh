@@ -16,7 +16,6 @@ WORKSPACE_ALLOWED_ROOT="${WORKSPACE_ALLOWED_ROOT:-$HOME/data/workspace}"
 CLOUDFLARED="${CLOUDFLARED:-$GW_HOME/bin/cloudflared}"
 DSH_BIN="$GW_HOME/deploy/dsh-runtime/node_modules/.bin/dsh"
 STATE_DIR="$GW_HOME/state"
-ROOT_MCP_EXPOSURE="${DSH_MCP_ROOT_MCP_EXPOSURE:-chatgpt}"
 
 # cordis `name:` fields must be literal paths — substitute <DSH_GW_HOME>
 PATCH_YML="$GW_HOME/deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml"
@@ -26,10 +25,6 @@ sed "s|<DSH_GW_HOME>|$GW_HOME|g" \
 if [ -z "${DSH_MCP_GATEWAY_ADMIN_PIN:-}" ]; then
   echo "env.conf must set DSH_MCP_GATEWAY_ADMIN_PIN" >&2; exit 1
 fi
-case "$ROOT_MCP_EXPOSURE" in
-  chatgpt|generic) ;;
-  *) echo "DSH_MCP_ROOT_MCP_EXPOSURE must be 'chatgpt' or 'generic'" >&2; exit 1 ;;
-esac
 if [ ! -d "$WORKSPACE_ALLOWED_ROOT" ]; then
   echo "WORKSPACE_ALLOWED_ROOT '$WORKSPACE_ALLOWED_ROOT' does not exist." >&2
   echo "Create it (mkdir -p \"$WORKSPACE_ALLOWED_ROOT\") or set WORKSPACE_ALLOWED_ROOT in env.conf." >&2
@@ -130,8 +125,7 @@ DSH_MCP_GATEWAY_ADMIN_PIN="$DSH_MCP_GATEWAY_ADMIN_PIN" \
     --dsh-harness-url "http://127.0.0.1:$DSH_HOST_PORT" \
     --public-base-url "$PUBLIC_URL" \
     --allowed-host "${TUNNEL_URL#https://}" \
-    --state-dir "$STATE_DIR" \
-    --root-mcp-exposure "$ROOT_MCP_EXPOSURE"
+    --state-dir "$STATE_DIR"
 # Fresh tunnel edge registration and worker upstream propagation routinely
 # outlast a few seconds — poll briefly instead of probing once.
 ready=
@@ -150,5 +144,5 @@ done
 echo
 echo "ChatGPT connector URL : $PUBLIC_URL/chatgpt/mcp"
 echo "Gemini connector URL  : $PUBLIC_URL/gemini/mcp"
-echo "Root MCP URL          : $PUBLIC_URL/mcp (exposure: $ROOT_MCP_EXPOSURE)"
+echo "Root MCP URL          : $PUBLIC_URL/mcp"
 echo "Owner PIN             : $DSH_MCP_GATEWAY_ADMIN_PIN"

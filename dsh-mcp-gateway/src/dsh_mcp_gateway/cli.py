@@ -132,15 +132,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--root-mcp-exposure",
-        choices=("generic", "chatgpt"),
-        default="generic",
-        help=(
-            "Exposure implementation mounted at /mcp. The final mount is generic; chatgpt exists only "
-            "for the approved two-stage connector migration."
-        ),
-    )
-    parser.add_argument(
         "--public-base-url",
         required=True,
         help="Public HTTPS origin used as OAuth issuer, for example https://gateway.example.com.",
@@ -247,7 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"invalid --dsh-harness-url: {exc}") from exc
 
     state_dir = Path(args.state_dir).absolute()
-    exposure_mounts = default_exposure_mounts(root_exposure=args.root_mcp_exposure)
+    exposure_mounts = default_exposure_mounts()
     oauth = EmbeddedOAuthConfig(
         issuer_url=public_base,
         resource_url=f"{public_base}/mcp",

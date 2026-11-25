@@ -24,21 +24,14 @@ from .oauth import (
 )
 
 
-def default_exposure_mounts(*, root_exposure: str = "generic") -> dict[str, Exposure]:
-    """Return the production mount table.
-
-    ``root_exposure`` exists only for the approved two-stage cutover: stage one
-    deploys with ``chatgpt`` so /mcp does not change while operators migrate
-    the connector, and stage two returns to the generic default.
-    """
-    if root_exposure not in {"generic", "chatgpt"}:
-        raise ValueError("root_exposure must be 'generic' or 'chatgpt'")
+def default_exposure_mounts() -> dict[str, Exposure]:
+    """Return the production mount table."""
     generic = GenericExposure()
     chatgpt = ChatgptExposure()
     return {
         "/chatgpt/mcp": chatgpt,
         "/gemini/mcp": generic,
-        "/mcp": generic if root_exposure == "generic" else chatgpt,
+        "/mcp": generic,
     }
 
 
