@@ -1,0 +1,701 @@
+{
+  "base": "http://127.0.0.1:3081/api/chatgpt-bridge",
+  "session": "golden-path-probe",
+  "probes": {
+    "revision": {
+      "status": 200,
+      "capabilityProfile": "chatgpt-external-v1",
+      "sandboxMode": "workspace-write",
+      "toolRevisionType": "number",
+      "workspace": "/Users/wenzhengwu/data/workspace"
+    },
+    "catalog": {
+      "status": 200,
+      "count": 18,
+      "names": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "read",
+        "read_image",
+        "remote_exec",
+        "remote_machine",
+        "shell_session",
+        "task_state",
+        "web_fetch",
+        "web_search",
+        "workspace_status",
+        "workspace_switch",
+        "write"
+      ]
+    },
+    "bash_echo": {
+      "error": false,
+      "text": "golden-42"
+    },
+    "write_read_roundtrip": {
+      "writeError": false,
+      "readError": false,
+      "readText": "<path>/Users/wenzhengwu/data/workspace/.golden-path-probe/roundtrip.txt</path>\n<type>file</type>\n<content>\n1: golden-roundtrip-42\n\n(End of file - total 1 lines)\n</content>"
+    },
+    "glob": {
+      "error": false,
+      "foundRoundtrip": true
+    },
+    "workspace_switch": {
+      "switchError": false,
+      "pwdText": "/Users/wenzhengwu/data/workspace/.golden-path-probe",
+      "cwdAnchored": true
+    },
+    "sandbox_escape": {
+      "error": false,
+      "text": "rc:1\n[stderr]\nbash: /Users/wenzhengwu/.golden-path-evil: Operation not permitted\n",
+      "denied": true
+    },
+    "shell_session": {
+      "openError": false,
+      "persistent": true,
+      "readText": "{\n  \"text\": \"dsh> export GOLDEN_VAR=persistence-check-42\\ndsh> echo val:$GOLDEN_VAR\\nval:persistence-check-42\\ndsh> \",\n  \"totalLines\": 4,\n  \"lineBegin\": 0,\n  \"lineEnd\": 4,\n  \"truncated\": false\n}{\"text\":\"dsh> export GOLDEN_VAR=persistence-check-42\\nds"
+    },
+    "task_state": {
+      "createError": false,
+      "getError": false,
+      "checkpointError": false,
+      "revisionExtracted": 1,
+      "checkpointText": "{\n  \"id\": \"task_6d0d664b-2110-43b1-83c5-89cfb6750de2\",\n  \"title\": \"golden-probe\",\n  \"status\": \"active\",\n  \"goal\": \"probe task\",\n  \"workspace\": \"probe\""
+    }
+  },
+  "catalog": [
+    {
+      "name": "shell_session",
+      "description": "Manage named persistent bash sessions through DSH native PTY and sandbox services. Actions: open, list, status, send, read, signal, close. Shell cwd and exported environment persist until close or owner disposal. Use send with wait=false for long-running foreground commands, then read output or deliver a signal. DSH owns session authorization, bounded output, process cleanup, and sandbox policy; this tool does not bypass them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "open",
+              "list",
+              "status",
+              "send",
+              "read",
+              "signal",
+              "close"
+            ],
+            "description": "Operation to perform."
+          },
+          "id": {
+            "type": "string",
+            "description": "Terminal session id returned by open. Required for status/send/read/signal/close."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional owner-local display name for open."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Optional initial working directory for open. DSH sandbox policy remains authoritative."
+          },
+          "text": {
+            "type": "string",
+            "description": "UTF-8 terminal input for send. May contain shell commands or interactive input."
+          },
+          "submit": {
+            "type": "boolean",
+            "description": "For send, append Enter after text. Defaults to true."
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "For send, wait for readiness/completion. Defaults to true. Set false for long-running commands, then use read/signal."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "For read, newest-relative retained-line offset."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "For read, requested retained-line count. DSH backend bounds still apply."
+          },
+          "signal": {
+            "type": "string",
+            "enum": [
+              "SIGINT",
+              "SIGTERM",
+              "SIGKILL",
+              "SIGTSTP",
+              "SIGHUP"
+            ],
+            "description": "Foreground process-group signal for signal."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "workspace_status",
+      "description": "Report the workspace root that subsequent tool calls execute under, plus how it was set (conversation binding or launch default).",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "workspace_switch",
+      "description": "Bind this conversation to a new workspace root for subsequent tool calls (bash cwd, filesystem roots, sandbox boundary). The binding persists for the whole conversation; the response reports the new root.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute or ~-relative path of the new workspace root; must resolve to an existing directory under the allowed root."
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "task_state",
+      "description": "Persist and restore passive engineering-task state across ChatGPT conversations. This tool stores checkpoints only; it never chooses actions, invokes a model, or continues work by itself. Actions: create, get, list, update, checkpoint, pause, resume, complete. Mutating an existing task requires if_revision from the latest get/checkpoint result to prevent stale overwrites. resume only marks a paused task active; ChatGPT still decides and performs every next action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "get",
+              "list",
+              "update",
+              "checkpoint",
+              "pause",
+              "resume",
+              "complete"
+            ],
+            "description": "Task-state operation to perform."
+          },
+          "id": {
+            "type": "string",
+            "description": "Task id returned by create. Required for get/update/checkpoint/pause/resume/complete."
+          },
+          "if_revision": {
+            "type": "integer",
+            "description": "Latest task revision. Required for every mutation of an existing task."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short task title. Required for create; optional for update."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Passive goal text. Stored as data only; never drives an execution loop."
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Workspace/repository path or other engineering scope identifier."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Current compact engineering-state summary. Required for checkpoint."
+          },
+          "plan": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Passive plan items. They describe state; DSH never executes them."
+          },
+          "next_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Candidate next steps for a later ChatGPT conversation."
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Relevant commit ids, files, issue ids, URLs, or other compact references."
+          },
+          "query": {
+            "type": "string",
+            "description": "Case-insensitive substring filter for list across current task state."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "completed"
+            ],
+            "description": "Optional status filter for list."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum list results. Defaults to 20."
+          },
+          "include_history": {
+            "type": "boolean",
+            "description": "For get only: include up to 20 prior checkpoints. Defaults to false for compact resume context."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remote_machine",
+      "description": "Manage DSH-native outbound-polling remote workers. Create one-time invites, list registered machines, rename them, or revoke their persistent identity. Remote machines run a small stdlib-only worker and do not install DSH.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "invite",
+              "list",
+              "rename",
+              "revoke"
+            ],
+            "description": "Remote worker administration operation."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional machine name bound to a new invite."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Optional default working directory bound to a new invite."
+          },
+          "ttl_s": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 86400,
+            "description": "Invite lifetime in seconds. Defaults to 600."
+          },
+          "machine": {
+            "type": "string",
+            "description": "Existing machine name for rename/revoke."
+          },
+          "new_name": {
+            "type": "string",
+            "description": "New machine name for rename."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remote_exec",
+      "description": "Execute bounded shell or UTF-8 filesystem operations on one explicitly enrolled DSH remote worker. Enrollment delegates that remote OS user authority; the worker workdir is a default cwd, not a filesystem sandbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "machine": {
+            "type": "string",
+            "description": "Registered remote machine name."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "shell",
+              "read",
+              "write",
+              "edit",
+              "glob",
+              "grep"
+            ],
+            "description": "Remote execution operation."
+          },
+          "command": {
+            "type": "string",
+            "description": "Bash command for action=shell."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Optional command working directory; defaults to the worker workdir."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000,
+            "description": "Remote operation timeout. Defaults to 60000 ms."
+          },
+          "max_output_chars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48000,
+            "description": "Maximum combined shell stdout/stderr characters. Defaults to 32000."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "File path for read/write/edit."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "First 1-based line for read. Defaults to 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "description": "Maximum lines/results for read/grep. Defaults to 200."
+          },
+          "content": {
+            "type": "string",
+            "description": "UTF-8 content for write."
+          },
+          "old_string": {
+            "type": "string",
+            "description": "Exact text to replace for edit."
+          },
+          "new_string": {
+            "type": "string",
+            "description": "Replacement text for edit."
+          },
+          "replace_all": {
+            "type": "boolean",
+            "description": "Replace all exact matches for edit. Defaults to false."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Glob or grep pattern."
+          },
+          "path": {
+            "type": "string",
+            "description": "Base path for glob/grep. Defaults to the worker workdir."
+          },
+          "include": {
+            "type": "string",
+            "description": "Optional glob filter for grep, such as *.js."
+          },
+          "literal": {
+            "type": "boolean",
+            "description": "Treat grep pattern literally. Defaults to false."
+          }
+        },
+        "required": [
+          "machine",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "bash",
+      "description": "Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The bash command to execute."
+          },
+          "description": {
+            "type": "string",
+            "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it."
+          },
+          "run_in_background": {
+            "type": "boolean",
+            "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access."
+          }
+        },
+        "required": [
+          "command",
+          "description"
+        ]
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read a UTF-8 text file and return line-numbered content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to read, resolved by the filesystem backend."
+          },
+          "offset": {
+            "type": "number",
+            "description": "1-based first line to return. Defaults to 1."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of lines to return. Defaults to 2000."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "write",
+      "description": "Create or fully replace a UTF-8 text file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to write, resolved by the filesystem backend."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full UTF-8 text content to write."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "edit",
+      "description": "Edit an existing UTF-8 text file by replacing literal text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to edit, resolved by the filesystem backend."
+          },
+          "old_string": {
+            "type": "string",
+            "description": "Literal text to replace. Must match exactly."
+          },
+          "new_string": {
+            "type": "string",
+            "description": "Literal replacement text. Use an empty string to delete the match."
+          },
+          "replace_all": {
+            "type": "boolean",
+            "description": "Replace all matches. Defaults to false; when false, old_string must appear exactly once."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "old_string",
+          "new_string"
+        ]
+      }
+    },
+    {
+      "name": "glob",
+      "description": "Find files whose paths match a glob pattern. Returns matching file paths — never directories — including hidden and ignored files (VCS metadata directories are excluded). Up to 100 paths come back in modification-time order; a larger result returns the first 100 paths in modification-time order, says so, and reports where the complete sorted list was saved. This tool does not enumerate directory entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Glob pattern to match file paths against (e.g. \"**/*.ts\", \"src/**/*.test.js\"). A pattern with no \"/\" matches the basename at any depth, so \"*\" and \"*.ts\" both search the whole tree; include a separator to anchor the depth."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      }
+    },
+    {
+      "name": "grep",
+      "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns the first 250 matches inline; a capped result reports where the complete match list was saved. Use read on a matched file for surrounding context.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Regular expression to search for (ripgrep syntax)."
+          },
+          "path": {
+            "type": "string",
+            "description": "File or directory to search. Defaults to the session workspace; a relative path resolves against it."
+          },
+          "include": {
+            "type": "string",
+            "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\"). Not a list; negation is not supported."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      }
+    },
+    {
+      "name": "job_output",
+      "description": "Read a background job. Stream jobs return only output since the previous read; final-output jobs return their result after settlement. Every response ends with `[status: ...]`. Reads are non-blocking unless `wait: true`, which waits up to the configured cap.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by the tool that started the background work."
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "Block until the job reaches a terminal status or the timeout expires. A timed-out wait returns [status: running] and leaves the job alive."
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Max wait in milliseconds (only meaningful with wait: true). Defaults to the configured wait timeout; capped by the configured maximum."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "job_list",
+      "description": "List your background jobs (running and finished) with their ids, kinds, and statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "job_kill",
+      "description": "Request cancellation of a running background job by job id. Returns immediately; the job settles as killed once its work actually stops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by the tool that started the background work."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional short reason, recorded in the log and forwarded to the job."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web for current information. Provide 1–4 queries in the required queries array. Returns an optional summary answer and a list of source URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "description": "Required search queries; accepts 1–4 items and merges their results.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "queries"
+        ]
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch the content of a specific HTTP(S) URL and return it decoded to text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The HTTP(S) URL to fetch."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "read_image",
+      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches. Requires the current model to accept image input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the image file, resolved by the filesystem backend."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    }
+  ],
+  "errors": []
+}
