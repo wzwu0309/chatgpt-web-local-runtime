@@ -141,6 +141,17 @@ UUID),0 个真实行为差异。** 含冷启动 resume 验证。
 | 3 | 预设系统文件支撑改为注册表支撑，`resolve()` 只返 `{id,broken?}`,`.path` 消失 | 指纹改 hash `compositionInventory()`(语义更准) |
 | 4 | `persistence.list()` 从 headers 改返 snapshots `{header,revision}` | 查找前规范化 |
 | 5 | 0.2.x 新增插件兼容性强制：peerDependencies 精确钉版会被禁用(响亮报错，非静默) | peer 改 `^0.2.0-rc.2`(社区范本) |
+| 6 | 0.2.x 新增条件注册(`when` 子句,0.1.x 为零)：带条件的工具(web_fetch/web_search 按模型 provider 的就绪性)只能经**解析过的 toolSet** 执行;`executeToolBatch` 不自行解析条件——上游由 AgentLoop 每步 resolve,bridge 直调必须同样 resolve+传 toolSet+dispose | `/call` 端点执行前 `ctx.tools.resolve({agent, modelSelection, signal})` |
+
+### 语义差异备忘(非回归)
+
+- **web_search 在无凭证部署下执行面隐藏**:0.2.x 按搜索后端就绪性条件注册;
+  本部署刻意无 DEEPSEEK_API_KEY,0.1.2 下它可见但调用必失败,0.2.2 下执行面
+  不可见 —— 等效且更干净。注意:catalog(standing scope 直读)仍会列出它,
+  因为目录读取不求值 when —— catalog/execution 存在轻微不一致,如需严格一致
+  可后续让 catalog 也走 toolSet 投影(非必须,生产 UX 等效)。
+- remote_machine/job_list/web_fetch 执行路径已抽测通过;remote_exec 需活
+  远端 worker,属本地验证范围外。
 
 ### 验证过程中发现但无需行动的事项
 
