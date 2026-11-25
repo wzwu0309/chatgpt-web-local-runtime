@@ -28,3 +28,4 @@ state/
 home/storages/
 home/sessions/
 home/profiles/*/node_modules/
+.worktrees/
