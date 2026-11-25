@@ -67,22 +67,32 @@ curl -sf "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/revision" >/dev/nul
   && echo "  ok" || { echo "  FAILED — see /tmp/dsh-web-host.log"; exit 1; }
 
 echo "[2/4] cloudflared quick tunnel -> :$GATEWAY_PORT"
-# Kill only tunnels pointed at our gateway port, regardless of binary path.
-pkill -f "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT" 2>/dev/null || true
-sleep 1
-: > /tmp/cloudflared.log
-# http2 (TCP 7844) survives networks that throttle UDP/QUIC.
-bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
-  _ /tmp/cloudflared.log "$CLOUDFLARED" tunnel \
-  --url "http://127.0.0.1:$GATEWAY_PORT" --protocol http2 --no-autoupdate
 TUNNEL_URL=""
-for i in $(seq 1 30); do
-  # -a: log may contain NUL bytes from a killed writer mid-append
-  TUNNEL_URL=$(grep -ao "https://[a-z0-9-]*\.trycloudflare\.com" /tmp/cloudflared.log | head -1 || true)
+# Quick-tunnel provisioning is rate-limited per egress IP (429 Tunnelstore)
+# and cloudflared exits immediately on it — retry with backoff instead of
+# failing the whole launch. Each attempt starts clean so strays can't pile up.
+for attempt in 1 2 3; do
+  # Kill only tunnels pointed at our gateway port, regardless of binary path.
+  pkill -f "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT" 2>/dev/null || true
+  sleep 1
+  : > /tmp/cloudflared.log
+  # http2 (TCP 7844) survives networks that throttle UDP/QUIC.
+  bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
+    _ /tmp/cloudflared.log "$CLOUDFLARED" tunnel \
+    --url "http://127.0.0.1:$GATEWAY_PORT" --protocol http2 --no-autoupdate
+  for i in $(seq 1 30); do
+    sleep 2
+    # -a: log may contain NUL bytes from a killed writer mid-append
+    TUNNEL_URL=$(grep -ao "https://[a-z0-9-]*\.trycloudflare\.com" /tmp/cloudflared.log | head -1 || true)
+    [ -n "$TUNNEL_URL" ] && break
+    # Provisioning failure kills cloudflared — no point waiting out the minute.
+    pgrep -f "cloudflared.*--url http://127\.0\.0\.1:$GATEWAY_PORT" >/dev/null || break
+  done
+  [ "${TUNNEL_URL#https://}" != "$TUNNEL_URL" ] || TUNNEL_URL=""
   [ -n "$TUNNEL_URL" ] && break
-  sleep 2
+  [ "$attempt" -lt 3 ] && echo "  provisioning attempt $attempt failed (see /tmp/cloudflared.log); retrying in 15s"
+  [ "$attempt" -lt 3 ] && sleep 15
 done
-[ "${TUNNEL_URL#https://}" != "$TUNNEL_URL" ] || TUNNEL_URL=""
 [ -n "$TUNNEL_URL" ] || { echo "  FAILED — see /tmp/cloudflared.log"; exit 1; }
 echo "  $TUNNEL_URL"
 
