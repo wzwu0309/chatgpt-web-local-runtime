@@ -2,15 +2,15 @@
 
 [English](../en/cloudflare.md) | 中文
 
-Worker 门面把轮换的 quick tunnel 变成一个**永久不变的公网 URL** 给
-ChatGPT 连接器用。在 Cloudflare 控制台一次性配置；免费套餐绰绰有余
+Worker 门面把轮换的 quick tunnel 变成一个**永久不变的公网 origin** 给
+各 MCP 客户端连接器用。在 Cloudflare 控制台一次性配置；免费套餐绰绰有余
 (每天 10 万请求，含 KV)。
 
 ```
 start.sh ──PUT /_upstream──> Worker (dsh-gw.<you>.workers.dev)
                                  │  tunnel URL 存进 KV(UPSTREAM)
                                  ▼
-ChatGPT ──其他所有请求──>        原样代理到当前 tunnel
+MCP 客户端 ──其他所有请求──>   原样代理到当前 tunnel
 ```
 
 ## 步骤
@@ -91,6 +91,8 @@ curl -i -X PUT "$WORKER_PUBLIC_URL/_upstream" \
 
 ```bash
 curl "$WORKER_PUBLIC_URL/.well-known/oauth-authorization-server"   # 返回 OAuth JSON
+curl "$WORKER_PUBLIC_URL/.well-known/oauth-protected-resource/chatgpt/mcp"
+# 返回 resource = "$WORKER_PUBLIC_URL/chatgpt/mcp" 的 JSON,说明路径感知发现在线
 ```
 
 ## 排错
@@ -100,12 +102,12 @@ curl "$WORKER_PUBLIC_URL/.well-known/oauth-authorization-server"   # 返回 OAut
 | `KV binding UPSTREAM is not configured`(500) | 绑定没建或名字写错 —— 必须正好是 `UPSTREAM` |
 | `start.sh` 之后仍 `upstream not registered yet`(503) | `/_upstream` PUT 失败 —— 查 env.conf 里的 `UPSTREAM_ADMIN_SECRET` 和 `PROXY` |
 | PUT 返回 `forbidden`(403) | Worker 密钥与 env.conf 不一致 |
-| 本机访问不了 Worker URL | 网络封 `*.workers.dev` —— 给启动器设 `PROXY=`(ChatGPT 不受影响) |
+| 本机访问不了 Worker URL | 网络封 `*.workers.dev` —— 给启动器设 `PROXY=`(外部 MCP 客户端不受影响) |
 
 ## 安全说明
 
 - Worker 终结 TLS —— 它能看到请求/响应**明文**。这正是 OAuth + owner
-  PIN 做内层的原因(`/mcp` 有 Bearer 保护);tunnel URL 泄露本身不授予
+  PIN 做内层的原因(所有 MCP mount 都有 Bearer 保护);tunnel URL 泄露本身不授予
   任何权限。
 - `ADMIN_SECRET` 只守 `PUT /_upstream`;其他路径原样代理。密钥泄露
   会让攻击者把你的门面指到*他们的*上游 —— 一旦发生就轮换(Worker

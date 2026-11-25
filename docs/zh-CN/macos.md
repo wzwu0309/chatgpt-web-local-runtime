@@ -29,7 +29,7 @@
 cd <repo>                      # 项目目录
 
 # 1) 安装器 —— 把 dsh-mcp-gateway/ 复制到目标目录、建 venv、装网关
-#    (editable;上游 @faf9606 + 我们的 patch,已应用)和 npm runtime、
+#    (editable;上游 @faf9606 + 本地扩展)和 npm runtime、
 #    生成 env.conf。
 #    原生模块: node-pty/koffi 走自带预编译产物 —— 标准架构无需工具链
 #    (allowScripts 表必需)。
@@ -37,9 +37,8 @@ cd <repo>                      # 项目目录
 #    bin/cloudflared 永不被覆盖。
 ./install.sh                   # -> ~/.dsh-mcp-gateway(--target DIR 可改)
 
-#    版本注意: 0.1.2 的 pin 早于 sandbox-policy 的
-#    additionalWritableRoots —— 0.2.2-rc.3 已带；升 pin 后把 bridge
-#    patch 注释里说的 sandbox-policy 块加回来。
+#    runtime 版本固定在 deploy/dsh-runtime/package.json;升级后需重跑
+#    golden-path 验证并重新评估 sandbox-policy 配置。
 
 # 2) Worker 门面 —— 在 Cloudflare 控制台部署 worker/_worker.js;
 #    分步说明: docs/zh-CN/cloudflare.md
@@ -57,8 +56,9 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 `home/profiles/web/package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
 重跑 `./start.sh`。
 
-把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/mcp`，用 owner PIN
-完成 OAuth。
+把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/chatgpt/mcp`，用 owner PIN
+完成 OAuth。Gemini 使用 `$WORKER_PUBLIC_URL/gemini/mcp`；其他 generic
+客户端使用 `$WORKER_PUBLIC_URL/mcp`。
 
 ## 启动与运维
 
@@ -69,8 +69,8 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
   URL,PUT 到 Worker(`/_upstream`)，并按新主机名带
   `--allowed-host <new-host>` 重启网关。
 - 如果网络封了 `*.workers.dev`，在 env.conf 设 `PROXY=` —— 启动器自己的
-  外发 curl（发布 upstream、健康检查）会走它。ChatGPT 从外部直连 Worker,
-  不受影响。
+  外发 curl（发布 upstream、健康检查）会走它。外部 MCP 客户端从互联网直连
+  Worker,不受影响。
 - `env.conf` 是 `source` 而非 export —— DSH host 需要的值必须在启动行
   显式转发（这就是 `start.sh` 传 `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"` 的原因）。
 - 日志：`/tmp/dsh-web-host.log`、`/tmp/cloudflared.log`、
@@ -85,6 +85,7 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 - **插件路径**:cordis patch 的 `name:` 必须是字面量 —— patch 模板用
   `<DSH_GW_HOME>` 占位符，`start.sh` 启动前替换生成
   `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml`。
-- **工作区根**:`~/data/workspace`(bridge 经 `os.homedir()` 解析）。
+- **工作区根**：允许根默认 `~/data/workspace`，启动/回落根默认
+  `~/data/workspace/default`(bridge 经 `os.homedir()` 解析）。
 - **可选 Devin**:`devin/` + `DSH_SUBAGENT_DEVIN=1`;`devinPath` 写绝对路径
   （如 `~/.local/bin/devin`),不依赖 PATH。

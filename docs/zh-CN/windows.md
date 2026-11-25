@@ -28,7 +28,7 @@
 cd <repo>                      # 项目目录
 
 # 1) 安装器 —— 把 dsh-mcp-gateway\ 复制到目标目录、建 venv、装网关
-#    (editable;上游 @faf9606 + 我们的 patch,已应用)和 npm runtime、
+#    (editable;上游 @faf9606 + 本地扩展)和 npm runtime、
 #    生成 env.conf。
 #    原生模块: node-pty/koffi 走自带预编译产物 —— 仅在没有匹配
 #    prebuild 的平台上才需要工具链。
@@ -37,8 +37,8 @@ cd <repo>                      # 项目目录
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 #                                -> %USERPROFILE%\.dsh-mcp-gateway(-Target 可改)
 
-#    版本注意: 0.1.2 的 pin 早于 sandbox-policy 的
-#    additionalWritableRoots —— 0.2.2-rc.3 已带；需要时升 pin。
+#    runtime 版本固定在 deploy/dsh-runtime/package.json;升级后需重跑
+#    golden-path 验证并重新评估 sandbox-policy 配置。
 
 # 2) Worker 门面 —— 在 Cloudflare 控制台部署 worker/_worker.js;
 #    分步说明: docs/zh-CN/cloudflare.md
@@ -56,8 +56,9 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 `home\profiles\web\package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
 重跑 `start.ps1`。
 
-把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/mcp`，用 owner PIN
-完成 OAuth。
+把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/chatgpt/mcp`，用 owner PIN
+完成 OAuth。Gemini 使用 `$WORKER_PUBLIC_URL/gemini/mcp`；其他 generic
+客户端使用 `$WORKER_PUBLIC_URL/mcp`。
 
 ## 启动与运维
 
@@ -90,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
   shell 需求由 `pwsh` 工具覆盖。
 - **二进制**:`node_modules/.bin/dsh.cmd`、
   `.venv\Scripts\dsh-mcp-gateway.exe`。
-- **工作区根**:`%USERPROFILE%\data\workspace` —— bridge 经 `os.homedir()` 解析，
-  `workspace_switch` 的允许根自动跟随。
+- **工作区根**：允许根默认 `%USERPROFILE%\data\workspace`，启动/回落根默认
+  `%USERPROFILE%\data\workspace\default`(bridge 经 `os.homedir()` 解析）。
 - **网关**:Python venv 与 `oauth.py` 的 `/proc/self/fd` 回退本来就覆盖
-  Windows —— 除 `gateway-local-changes.patch` 外无需额外源码改动。
+  Windows —— 本地 gateway 扩展均在 `src/dsh_mcp_gateway/`，无需额外平台 patch。

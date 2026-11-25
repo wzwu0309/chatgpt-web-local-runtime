@@ -10,8 +10,9 @@ Devin 代码、catalog 里也**不会出现**任何 Devin 工具。不用 Devin 
 
 - `devin` LLM provider（经 `devin acp`，账户认证 —— 不需要 API key 环境变量）
 - `devin` 委派工具 + 交互会话里的 `/devin` 命令
-- ChatGPT catalog 里的 `subagent_devin`：模型钉死在 `swe-2-high` 的进程内
-  DSH 子 agent loop（模型在入口级固定，调用方无法覆盖）
+- 外部 MCP catalog 里的 `subagent_devin`：模型钉死在 `swe-2-high` 的进程内
+  DSH 子 agent loop（模型在入口级固定，调用方无法覆盖；ChatGPT 与 generic
+  exposure 共用同一能力画像）
 
 ## 启用步骤
 
