@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import build_embedded_oauth_server
+from .gateway_app import EmbeddedOAuthGateway, default_exposure_mounts
 from .harness_bridge import HarnessBridgeClient
 from .remote_worker_edge import install_remote_worker_routes
 
@@ -73,8 +73,18 @@ def install_health_routes(server, harness_bridge) -> None:
 
     @server.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(_request):
+        exposures = server.exposure_health() if hasattr(server, "exposure_health") else {}
+        degraded = any(
+            isinstance(exposure, dict)
+            and isinstance(exposure.get("workspaceBinding"), dict)
+            and exposure["workspaceBinding"].get("sustainedMissing") is True
+            for exposure in exposures.values()
+        )
+        payload = {"ok": True, "service": "dsh-mcp-gateway", "degraded": degraded}
+        if exposures:
+            payload["exposures"] = exposures
         return JSONResponse(
-            {"ok": True, "service": "dsh-mcp-gateway"},
+            payload,
             headers={"Cache-Control": "no-store"},
         )
 
@@ -119,6 +129,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "EXPERIMENTAL: add one MCP App tool that probes ChatGPT Web's official ui/message follow-up bridge. "
             "Disabled by default and not part of the stable four-tool surface."
+        ),
+    )
+    parser.add_argument(
+        "--root-mcp-exposure",
+        choices=("generic", "chatgpt"),
+        default="generic",
+        help=(
+            "Exposure implementation mounted at /mcp. The final mount is generic; chatgpt exists only "
+            "for the approved two-stage connector migration."
         ),
     )
     parser.add_argument(
@@ -246,23 +265,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ.get("DSH_MCP_GATEWAY_EXEC_LOG")
         or (Path(tempfile.gettempdir()) if os.name == "nt" else Path("/tmp")) / "dsh-mcp-gateway.log"
     )
-    server, _provider = build_embedded_oauth_server(
+    gateway = EmbeddedOAuthGateway(
         harness_bridge,
         oauth,
+        mounts=default_exposure_mounts(root_exposure=args.root_mcp_exposure),
         project_dsh_tools=args.tool_surface == "projected",
         enable_chatgpt_web_companion=args.experimental_chatgpt_web_companion,
     )
-    install_health_routes(server, harness_bridge)
-    install_remote_worker_routes(server, harness_bridge, public_base)
+    install_health_routes(gateway, harness_bridge)
+    install_remote_worker_routes(gateway, harness_bridge, public_base)
     print(
         f"DSH Harness bridge configured at {harness_bridge.base_url}; ChatGPT remains the reasoning agent; "
         f"tool surface={args.tool_surface}"
     )
-    print(f"MCP gateway listening on http://{args.bind_host}:{args.port}/mcp")
+    print(f"MCP gateway listening on http://{args.bind_host}:{args.port} with mounts /chatgpt/mcp, /gemini/mcp, /mcp")
     print(f"OAuth issuer: {oauth.issuer_url}")
     print(f"Execution log: {exec_log} (bounded to 8 MiB)", flush=True)
-    app = server.streamable_http_app(
-        streamable_http_path="/mcp",
+    app = gateway.build_app(
         json_response=True,
         transport_security=transport_security,
         host=args.bind_host,

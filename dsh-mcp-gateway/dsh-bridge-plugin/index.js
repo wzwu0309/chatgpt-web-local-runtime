@@ -672,6 +672,9 @@ export function apply(ctx, config = {}) {
       const sessionId = sessionIdOfCall()
       const real = await resolveAllowedWorkspace(rawArgs?.path)
       const previous = activeWorkspaceFor(sessionId)
+      if (!sessionId) {
+        throw new Error('session identity missing; workspace binding is unavailable — pass the workspace envelope parameter explicitly per call instead')
+      }
       if (real === previous) {
         // Explicit switch pins the session even when it lands on the fallback,
         // so a later global change doesn't move this conversation's root.
@@ -680,9 +683,6 @@ export function apply(ctx, config = {}) {
           await persistSessionWorkspaces()
         }
         return { workspace: real, changed: false }
-      }
-      if (!sessionId) {
-        throw new Error('session identity missing; workspace binding is unavailable — pass the workspace envelope parameter explicitly per call instead')
       }
       bindSessionWorkspace(sessionId, real)
       await persistSessionWorkspaces()

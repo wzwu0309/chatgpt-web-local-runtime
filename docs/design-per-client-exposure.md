@@ -1,6 +1,6 @@
 # 设计草案:按客户端策略暴露工具格式与显式 workspace 信封
 
-- 状态: **草案(grilling 第一轮闭环,未开工)**
+- 状态: **实施中(①bridge/②gateway 已完成,③④⑤待续)**
 - 日期: 2026-11-25
 - 关联: 与 `upgrade-to-dsh-0.2.md` **正交**——两者独立分支、独立合并、互不为前置
 
@@ -8,8 +8,8 @@
 > 标识客户端的专属暴露格式**;稳定标识客户端(ChatGPT)继续用 session 绑定 +
 > workspace_switch/status 工具,不暴露 workspace 参数——每个客户端只有一种惯用
 > 法,避免"既能又能"的二义性。统一只存在于 bridge 内部优先级链的实现层。
-> 策略链降级为**统一管线 + profile 注册表**(纯数据);绑定表参与是 profile
-> 控制的功能开关。Gemini 认证**复用现有 OAuth 体系**(DCR+PKCE+PIN 批准),
+> 策略链降级为**统一管线 + 挂载点直接解析到实现对象**;绑定表参与是
+> exposure 实现控制的功能开关。Gemini 认证**复用现有 OAuth 体系**(DCR+PKCE+PIN 批准),
 > 不引入静态 token。workspace 可发现性不新增工具:规则写进 Gemini 面
 > dsh_tool_call 的 description,实际目录由模型用 bash 自行探索。
 > Gemini web 接入前提(Connected Apps)已经 owner 实测连通。
@@ -67,20 +67,20 @@ workspace 永不进入任何工具的 arguments。
 
 ### D2 客户端识别用独立挂载点,零启发式
 
-Gemini 经独立 URL path 接入(**同 gateway 进程**,如 `/mcp/gemini`;
-OAuth/secrets/healthz 全复用);gateway 按挂载点确定 profile。
+Gemini 经独立 URL path 接入(**同 gateway 进程**,`/gemini/mcp`;
+OAuth/secrets/healthz 全复用);gateway 按挂载点确定 exposure 实现。
 不采用 user-agent/OAuth client 等启发式信号(脆弱,版本迭代即漂移)。
 operator 文档说明"哪个客户端配哪个 path",配置责任在用户侧。
 
 ### D3 workspace 解析优先级(bridge 唯一新增逻辑,客户端无感)
 
 ```
-信封显式 workspace  >  session 绑定(仅 profile 启用绑定时参与)  >  启动默认根
+信封显式 workspace  >  session 绑定(仅 exposure 启用绑定时参与)  >  启动默认根
 ```
 
 优先级链在 bridge 内部统一实现(纯函数 `activeWorkspaceFor` 加一个分支,
 一行量级)。但**暴露层刻意按客户端能力分化**:workspace 参数只在无稳定
-标识客户端的 profile 暴露;稳定标识客户端(ChatGPT)不暴露该参数,继续用
+标识客户端的 exposure 暴露;稳定标识客户端(ChatGPT)不暴露该参数,继续用
 workspace_switch/status 工具 + 绑定——每个客户端只有一种惯用法。
 
 显式值与绑定一样过 `resolveAllowedWorkspace` 验证(`WORKSPACE_ALLOWED_ROOT`
@@ -89,30 +89,29 @@ workspace_switch/status 工具 + 绑定——每个客户端只有一种惯用�
 ### D4 workspace 参数:可选,缺省 = 启动默认根
 
 非必填,避免首轮交互被迫先探测;且 fallback 是唯一可预测的全局默认,
-不是"回落 session 绑定"的混合语义(Gemini profile 不启用绑定)。
+不是"回落 session 绑定"的混合语义(generic exposure 不启用绑定)。
 **可发现性不新增工具**:`dsh_tool_call` 的 description 写明合法规则
 ("allowedRoot 及其任意子目录可经 workspace 传入"),实际有哪些目录由
 模型用 bash/ls 自行探索。workspace_status 因此**不进** Gemini 面——它报告
 的信息已全部进 description。
 
-### D5 catalog 按 profile 投影
+### D5 catalog 按 exposure 投影
 
 ```
-gemini profile   → 剔除:
+generic exposure → 仅剔除绑定三件套:
     workspace_switch   语义不复存在(无绑定可设;"切换"即下次传不同参数)
     workspace_status   信息已并入 dsh_tool_call description(见 D4)
-    task_state         设计前提是持久会话跨轮续接,Gemini 无稳定会话可锚
-    web_search         本部署无搜索凭证,执行面本就不可用(0.2.x 条件注册)
+    task_state         设计前提是持久会话跨轮续接,无稳定会话可锚
     能力/凭证维度过滤: 无(owner 定稿:web_search/remote_*/read_image 全保留;
               是否具备使用条件由模型自判,执行失败是诚实反馈,catalog 不替
               模型做能力假设;web_search 无凭证是部署级事实,对所有客户端
               平等,不属于 per-client 过滤层)
-    结论: gemini catalog = 全量 - 绑定三件套,差异被 workspaceBinding 轴
+    结论: generic catalog = 全量 - 绑定三件套,差异被 workspaceBinding 轴
               完全吸收,per-client 能力过滤清单整体不存在
-chatgpt profile  → 现状,不变
+chatgpt exposure → 现状,不变
 ```
 
-发现与执行同 profile(架构契约):Gemini 即使猜到被剔除工具的名字,
+发现与执行同投影(架构契约):Gemini 即使猜到被剔除工具的名字,
 执行同样拒绝。skill 维度(dsh_skill_catalog/dsh_skill_load)在 Gemini 面
 **保留**;实施注意:skill 内容常假设持久工作区上下文,加载后指引模型用
 workspace 参数显式锚定即可。
@@ -155,7 +154,7 @@ OAuth)全客户端共享,不属于任何 exposure 对象。正确的配置不可
 ### D7 认证:Gemini 复用现有 OAuth 体系,不引入静态 token
 
 Gemini 消费版 Connected Apps 走标准 MCP OAuth(DCR + public PKCE),与
-ChatGPT 同构。接入流程:Gemini 配置 MCP URL(`/mcp/gemini`)→ 跳转批准页
+ChatGPT 同构。接入流程:Gemini 配置 MCP URL(`/gemini/mcp`)→ 跳转批准页
 → operator 输 PIN → 签发 token。`DSH_MCP_GATEWAY_ADMIN_PIN` 继续只管批准
 动作,不作访问凭证。**禁止复用 PIN 当静态 token**——Gemini URL 泄露将同时
 交出 OAuth 批准能力,攻击者可自行批准恶意客户端。
@@ -164,7 +163,7 @@ ChatGPT 同构。接入流程:Gemini 配置 MCP URL(`/mcp/gemini`)→ 跳转批�
 单 owner 系统无实际影响。若未来需要凭证级隔离,按 client_id 绑定 mount
 是增量改动,不影响本设计。
 
-## 4. 工具类别分析(决定 Gemini 子集,而非参数传递)
+## 4. 工具类别分析(workspace 敏感性与绑定依赖)
 
 | 类别 | 工具 | workspace 语义 | Gemini 面取舍 |
 |---|---|---|---|
@@ -172,21 +171,21 @@ ChatGPT 同构。接入流程:Gemini 配置 MCP URL(`/mcp/gemini`)→ 跳转批�
 | 2. 间接敏感(agent 态) | shell_session、job_list/output/kill | 持久 PTY 与后台 job 属主于 per-workspace 能力代理;序列一致性靠"模型持续传同一 workspace"自动成立;传错则目标 id 在该代理不存在,自然报错,局部可诊断(**owner 确认:不做显式校验**) | 含 |
 | 3. 真正无关 | web_fetch | 纯网络操作,路由无关 | 含(不带 workspace 也正确) |
 | —— | read_image | 图像读取,模型自行判断使用条件(owner 决策) | 含 |
-| —— | workspace_switch / workspace_status / task_state / web_search / remote_machine / remote_exec | 见 D5 | 剔除 |
+| —— | workspace_switch / workspace_status / task_state | 见 D5 | generic 面剔除;web_search/remote_machine/remote_exec/read_image 保留 |
 
 ## 5. 完整链路
 
 ```
-Gemini web ──MCP──> /mcp/gemini(同 gateway 进程,path 即 profile 选择)
+Gemini web ──MCP──> /gemini/mcp(同 gateway 进程,path 即 exposure 选择)
   │  OAuth: DCR + PKCE + PIN 批准(与 ChatGPT 同一 provider)
   │
-  ├─ dsh_tool_catalog ──> bridge /tools?client=gemini ──> gemini profile 投影
+  ├─ dsh_tool_catalog ──> bridge /tools {binding:false} ──> 非绑定投影
   │
   └─ dsh_tool_call(name, arguments, workspace?)
-        │  gateway 提取 workspace 升为信封字段
+        │  gateway 提取 workspace 升为信封字段,丢弃 sessionId
         ▼
-     bridge /call {name, arguments, workspace, sessionId}
-        │  D3 优先级解析(binding 环节按 profile 跳过)
+     bridge /call {name, arguments, workspace, binding:false}
+        │  D3 优先级解析(binding 环节按 exposure 跳过)
         │  + resolveAllowedWorkspace 验证
         ▼
      hash(workspace, preset, composition) ──> 能力代理
@@ -232,7 +231,7 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
 - 不做启发式客户端识别;
 - 不把 workspace 注入任何底层工具的 arguments;
 - 不引入静态 token 或任何第二认证体系;
-- 不做 per-path 策略链(统一管线 + profile 数据已覆盖全部真实差异)。
+- 不做 per-path 策略链或 profile 注册表(统一管线 + exposure 对象已覆盖全部真实差异)。
 
 ## 8. 开放问题(开工前确认)
 
@@ -243,7 +242,7 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
       注:该注册走 sandbox/test redirect,属 Developer Mode 设施;正式路径
       机制相同。剩余硬要求:well-known 端点对任意路径后缀服务(两层路径挂载);
 - [ ] OAuth 运维两项实施:DCR 分层回收 + refresh TTL 180d(第二轮定稿);
-- [ ] gemini profile 的 catalog 投影需与 0.2.x 执行面条件(toolSet/`when`)
+- [ ] generic exposure 的 catalog 投影需与 0.2.x 执行面条件(toolSet/`when`)
       保持一致求值——catalog 过滤不能只是名称黑名单,要与执行面同一解析路径
       (升级适配 6 的直接教训)。
 
@@ -254,10 +253,12 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   operator 迁移连接器至 /chatgpt/mcp 并验证;阶段二小部署翻 /mcp 为通用面。
   全程零破损窗口;"暂不动"是部署排序,非兼容代码。
 - **实施进度(2026-11-25)**:✅ ①bridge 完成(commit a429939,信封
-  workspace+优先级链+binding 轴过滤+sessionId 缺席加固);⬜ ②gateway
-  exposure 对象/挂载路由/教义文案;⬜ ③OAuth 三件套(well-known 任意后缀/
+  workspace+优先级链+binding 轴过滤+sessionId 缺席加固);✅ ②gateway
+  exposure 对象/三挂载路由/教义文案/健康信号完成(本提交;`/chatgpt/mcp`
+  ChatgptExposure,`/gemini/mcp` 与 `/mcp` GenericExposure,`--root-mcp-exposure
+  chatgpt` 供阶段一切换);⬜ ③OAuth 三件套(well-known 任意后缀/
   分层回收/refresh 180d);⬜ ④golden-path 双侧验证;⬜ ⑤两阶段部署。
-  ②③④⑤ 待续,按本文档规格实施即可。
+  ③④⑤ 待续,按本文档规格实施即可。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。

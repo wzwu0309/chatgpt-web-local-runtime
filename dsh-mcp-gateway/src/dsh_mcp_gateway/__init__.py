@@ -7,13 +7,13 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
+from .exposure import Exposure, GenericExposure
 from .harness_bridge import (
     HarnessBridgeClient,
     HarnessProjectionMixin,
     tool_result_to_mcp,
     watch_tool_catalog,
 )
-from .identity import resolve_client_identity
 from .mcp_compat import disable_modern_subscriptions
 
 try:  # resolved lazily via get_type_hints; only the MCP server path dereferences it
@@ -26,29 +26,23 @@ __version__ = "0.1.0"
 _exec_log = logging.getLogger("dsh_mcp_gateway")
 
 
-def _session_id_from_context(ctx: Any) -> str | None:
-    """Session key forwarded to the bridge.  Resolution lives in
-    identity.resolve_client_identity: an ordered recognizer chain —
-    ChatGPT's per-conversation header, platform recognizers keyed by OAuth
-    principal, then the ephemeral transport session as last resort."""
-    identity = resolve_client_identity(ctx)
-    return identity.key if identity else None
-
-
 def build_mcp_server(
     harness_bridge: HarnessBridgeClient | None,
     *,
+    exposure: Exposure | None = None,
     project_dsh_tools: bool = False,
     enable_chatgpt_web_companion: bool = False,
     auth_server_provider: Any | None = None,
     auth: Any | None = None,
     _server_cls: Any | None = None,
 ) -> Any:
-    """Build the ChatGPT-facing MCP surface over one DSH Harness bridge."""
+    """Build one client-facing MCP surface over one DSH Harness bridge."""
     if project_dsh_tools and harness_bridge is None:
         raise ValueError("project_dsh_tools requires harness_bridge")
     if enable_chatgpt_web_companion and harness_bridge is None:
         raise ValueError("enable_chatgpt_web_companion requires harness_bridge")
+    if harness_bridge is not None and exposure is None:
+        raise ValueError("an exposure implementation is required when harness_bridge is supplied")
 
     try:
         from mcp.server import MCPServer
@@ -131,10 +125,8 @@ def build_mcp_server(
         harness_lifespan = companion_refresh_lifespan
 
     instructions = (
-        "DSH is the harness authority and ChatGPT is the reasoning agent. The stable meta-tools "
-        "dsh_tool_catalog/dsh_tool_call and dsh_skill_catalog/dsh_skill_load are the correctness path for DSH "
-        "community extensions: use them to discover and invoke capabilities even if the ChatGPT client keeps a "
-        "frozen MCP tool snapshot. When invoking through dsh_tool_call, arguments must include every property "
+        (exposure or GenericExposure()).instructions
+        + " When invoking through dsh_tool_call, arguments must include every property "
         "listed in the target tool's parameters.required from the catalog, using the exact property names in "
         "parameters.properties: read/write/edit take `file_path` (not `path`), bash takes `command` and "
         "`description`, glob/grep take `pattern`."
@@ -154,7 +146,7 @@ def build_mcp_server(
     mcp = server_cls(
         "dsh-mcp-gateway",
         version=__version__,
-        description="Expose DSH Harness capabilities to ChatGPT Web.",
+        description="Expose DSH Harness capabilities to MCP clients.",
         instructions=instructions,
         auth_server_provider=auth_server_provider,
         auth=auth,
@@ -166,11 +158,12 @@ def build_mcp_server(
         disable_modern_subscriptions(mcp)
     if harness_bridge is not None:
         mcp._dsh_harness_bridge = harness_bridge
+        mcp._dsh_exposure = exposure
 
         @mcp.tool(name="dsh_tool_catalog", annotations=read_only)
         def dsh_tool_catalog() -> dict[str, Any]:
             """List the current DSH ToolRuntime schemas exposed by installed DSH plugins."""
-            tools = harness_bridge.tools()
+            tools = exposure.catalog_tools(harness_bridge)
             return {
                 "tools": tools,
                 "count": len(tools),
@@ -181,106 +174,37 @@ def build_mcp_server(
                 ),
             }
 
-        @mcp.tool(name="dsh_tool_call", annotations=consequential_control)
-        def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None, ctx: Context = None) -> Any:
-            """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline.
+        if exposure.exposes_workspace_parameter:
 
-            `arguments` must satisfy the target tool's schema from dsh_tool_catalog — include
-            every property listed in its parameters.required under the exact names in
-            parameters.properties: read/write/edit take `file_path` (not `path`), bash takes
-            `command` and `description`. Missing or misnamed required properties are rejected
-            before execution.
+            @mcp.tool(name="dsh_tool_call", annotations=consequential_control, description=exposure.tool_call_description)
+            def dsh_tool_call(
+                name: str,
+                arguments: dict[str, Any] | None = None,
+                workspace: str | None = None,
+                ctx: Context = None,
+            ) -> Any:
+                """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline."""
+                result = exposure.call_tool(harness_bridge, name, arguments, ctx, workspace=workspace)
+                return tool_result_to_mcp(result)
 
-            Calls run under this conversation's workspace binding — the launch
-            default until changed via workspace_switch, which then persists for
-            the whole conversation.
-            """
-            identity = resolve_client_identity(ctx)
-            session_id = identity.key if identity else None
-            _exec_log.info(
-                "dsh_tool_call client=%s session=%s name=%s",
-                identity.client if identity else "-",
-                (session_id or "-")[:32],
-                name,
-            )
-            return tool_result_to_mcp(harness_bridge.call(name, arguments, session_id=session_id))
+        else:
+
+            @mcp.tool(name="dsh_tool_call", annotations=consequential_control, description=exposure.tool_call_description)
+            def dsh_tool_call(name: str, arguments: dict[str, Any] | None = None, ctx: Context = None) -> Any:
+                """Execute one discovered DSH tool through DSH's guarded ToolRuntime pipeline."""
+                result = exposure.call_tool(harness_bridge, name, arguments, ctx)
+                return tool_result_to_mcp(result)
 
         @mcp.tool(name="dsh_skill_catalog", annotations=read_only)
         def dsh_skill_catalog(ctx: Context = None) -> dict[str, Any]:
             """List model-invocable skills from DSH's native SkillRegistry for the calling
             conversation's bound workspace."""
-            skills = harness_bridge.skills(session_id=_session_id_from_context(ctx))
+            skills = harness_bridge.skills(session_id=exposure.skill_session_id(ctx))
             return {"skills": skills, "count": len(skills)}
 
         @mcp.tool(name="dsh_skill_load", annotations=read_only)
         def dsh_skill_load(name: str, ctx: Context = None) -> dict[str, Any]:
             """Load one DSH community skill's instructions through the native SkillRegistry."""
-            return {"skill": harness_bridge.load_skill(name, session_id=_session_id_from_context(ctx))}
+            return {"skill": harness_bridge.load_skill(name, session_id=exposure.skill_session_id(ctx))}
 
     return mcp
-
-
-def build_embedded_oauth_server(
-    harness_bridge: HarnessBridgeClient | None,
-    config: Any,
-    *,
-    project_dsh_tools: bool = False,
-    enable_chatgpt_web_companion: bool = False,
-) -> tuple[Any, Any]:
-    """Build a self-contained OAuth-protected MCP server plus its provider."""
-    try:
-        from mcp.server import MCPServer
-        from mcp.server.auth.settings import (
-            AuthSettings,
-            ClientRegistrationOptions,
-            RevocationOptions,
-        )
-        from pydantic import AnyHttpUrl
-    except ImportError as exc:  # pragma: no cover - installation boundary
-        raise RuntimeError("MCP auth dependencies are unavailable; install dsh-mcp-gateway[server]") from exc
-
-    from .oauth import (
-        EmbeddedOAuthProvider,
-        advertise_public_client_auth_methods,
-        install_approval_body_limit,
-        install_approval_route,
-        install_oauth_form_body_limit,
-        install_registration_body_limit,
-    )
-
-    class EmbeddedOAuthMCPServer(MCPServer):
-        def streamable_http_app(self, *args: Any, **kwargs: Any) -> Any:
-            app = super().streamable_http_app(*args, **kwargs)
-            advertise_public_client_auth_methods(app, self.settings.auth)
-            install_registration_body_limit(
-                app,
-                max_bytes=config.max_registration_request_bytes,
-            )
-            install_approval_body_limit(app)
-            install_oauth_form_body_limit(app)
-            return app
-
-    provider = EmbeddedOAuthProvider(config)
-    scopes = list(config.scopes)
-    required_scopes = list(config.required_scopes)
-    auth = AuthSettings(
-        issuer_url=AnyHttpUrl(config.issuer_url),
-        resource_server_url=AnyHttpUrl(config.resource_url),
-        required_scopes=required_scopes,
-        client_registration_options=ClientRegistrationOptions(
-            enabled=True,
-            valid_scopes=scopes,
-            default_scopes=scopes,
-        ),
-        revocation_options=RevocationOptions(enabled=True),
-    )
-    server = build_mcp_server(
-        harness_bridge,
-        project_dsh_tools=project_dsh_tools,
-        enable_chatgpt_web_companion=enable_chatgpt_web_companion,
-        auth_server_provider=provider,
-        auth=auth,
-        _server_cls=EmbeddedOAuthMCPServer,
-    )
-    install_approval_route(server, provider)
-    return server, provider

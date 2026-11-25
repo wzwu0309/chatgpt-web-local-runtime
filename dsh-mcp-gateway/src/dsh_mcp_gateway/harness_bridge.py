@@ -272,13 +272,15 @@ class HarnessProjectionMixin:
     """
 
     _dsh_harness_bridge: HarnessBridgeClient | None = None
+    _dsh_exposure: Any | None = None
 
     async def list_tools(self):
         base_tools = await super().list_tools()
         bridge = self._dsh_harness_bridge
         if bridge is None:
             return base_tools
-        schemas = await asyncio.to_thread(bridge.tools)
+        exposure = self._dsh_exposure
+        schemas = await asyncio.to_thread(exposure.catalog_tools, bridge)
         reserved = {tool.name for tool in base_tools}
         projected = []
         for schema in schemas:
@@ -292,7 +294,7 @@ class HarnessProjectionMixin:
         bridge = self._dsh_harness_bridge
         if bridge is None or self._tool_manager.get_tool(name) is not None:
             return await super().call_tool(name, arguments, context)
-        result = await asyncio.to_thread(bridge.call, name, arguments)
+        result = await asyncio.to_thread(self._dsh_exposure.call_tool, bridge, name, arguments, context)
         return tool_result_to_mcp(result)
 
 
@@ -395,8 +397,12 @@ class HarnessBridgeClient:
             raise HarnessBridgeError("DSH bridge returned an invalid instance id")
         return instance_id, self._validated_tool_revision(payload)
 
-    def tools(self, *, timeout_s: float | None = None) -> list[dict[str, Any]]:
-        payload = self._request("/api/chatgpt-bridge/tools", timeout_s=timeout_s)
+    def tools(self, *, timeout_s: float | None = None, binding: bool = True) -> list[dict[str, Any]]:
+        payload = self._request(
+            "/api/chatgpt-bridge/tools",
+            payload={"binding": binding},
+            timeout_s=timeout_s,
+        )
         tools = payload.get("tools")
         if not isinstance(tools, list) or not all(isinstance(item, dict) for item in tools):
             raise HarnessBridgeError("DSH bridge returned an invalid tool catalog")
@@ -430,14 +436,18 @@ class HarnessBridgeClient:
         arguments: dict[str, Any] | None = None,
         *,
         session_id: str | None = None,
+        workspace: str | None = None,
+        binding: bool = True,
     ) -> dict[str, Any]:
         if not name.strip():
             raise ValueError("name must be non-empty")
         if arguments is not None and not isinstance(arguments, dict):
             raise ValueError("arguments must be an object when supplied")
-        payload: dict[str, Any] = {"name": name, "arguments": arguments or {}}
+        payload: dict[str, Any] = {"name": name, "arguments": arguments or {}, "binding": binding}
         if session_id:
             payload["sessionId"] = session_id
+        if workspace is not None:
+            payload["workspace"] = workspace
         return _validated_tool_result(
             self._request(
                 "/api/chatgpt-bridge/call",
