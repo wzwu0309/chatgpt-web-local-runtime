@@ -88,6 +88,15 @@ class EmbeddedOAuthGateway:
         except ImportError as exc:  # pragma: no cover - installation boundary
             raise RuntimeError("MCP auth dependencies are unavailable; install dsh-mcp-gateway[server]") from exc
 
+        resource_scheme, resource_netloc = config.resource_origin()
+        expected_resources = {
+            f"{resource_scheme}://{resource_netloc}{path}" for path in mounts
+        }
+        configured_resources = set(config.accepted_resource_urls())
+        missing_resources = sorted(expected_resources - configured_resources)
+        if missing_resources:
+            raise ValueError(f"OAuth resource URLs are missing for exposure mounts: {', '.join(missing_resources)}")
+
         self.harness_bridge = harness_bridge
         self.provider = EmbeddedOAuthProvider(config)
         self.mounts = dict(mounts)
@@ -146,13 +155,10 @@ class EmbeddedOAuthGateway:
             create_auth_routes,
             create_protected_resource_routes,
         )
+        from pydantic import AnyHttpUrl
 
         token_verifier = ProviderTokenVerifier(self.provider)
         required_scopes = list(self.auth.required_scopes or [])
-        resource_metadata_url = None
-        if self.auth.resource_server_url:
-            resource_metadata_url = build_resource_metadata_url(self.auth.resource_server_url)
-
         child_apps: list[Starlette] = []
         routes: list[Route] = []
         for path, exposure in self.mounts.items():
@@ -169,10 +175,13 @@ class EmbeddedOAuthGateway:
                 host=host,
             )
             child_apps.append(child)
+            resource_scheme, resource_netloc = self.config.resource_origin()
+            mount_resource_url = f"{resource_scheme}://{resource_netloc}{path}"
+            mount_resource_metadata_url = build_resource_metadata_url(AnyHttpUrl(mount_resource_url))
             routes.append(
                 Route(
                     path,
-                    endpoint=RequireAuthMiddleware(child, required_scopes, resource_metadata_url),
+                    endpoint=RequireAuthMiddleware(child, required_scopes, mount_resource_metadata_url),
                 )
             )
 
@@ -186,10 +195,10 @@ class EmbeddedOAuthGateway:
                 identity_assertion_enabled=self.auth.identity_assertion_enabled,
             )
         )
-        if self.auth.resource_server_url:
+        for resource_url in self.config.accepted_resource_urls():
             routes.extend(
                 create_protected_resource_routes(
-                    resource_url=self.auth.resource_server_url,
+                    resource_url=AnyHttpUrl(resource_url),
                     authorization_servers=[self.auth.issuer_url],
                     scopes_supported=list(self.auth.required_scopes or []),
                 )

@@ -247,9 +247,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"invalid --dsh-harness-url: {exc}") from exc
 
     state_dir = Path(args.state_dir).absolute()
+    exposure_mounts = default_exposure_mounts(root_exposure=args.root_mcp_exposure)
     oauth = EmbeddedOAuthConfig(
         issuer_url=public_base,
         resource_url=f"{public_base}/mcp",
+        resource_urls=tuple(f"{public_base}{path}" for path in exposure_mounts),
         state_db=state_dir / "oauth.sqlite3",
         admin_pin=admin_pin,
         max_registered_clients=args.max_registered_clients,
@@ -268,7 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     gateway = EmbeddedOAuthGateway(
         harness_bridge,
         oauth,
-        mounts=default_exposure_mounts(root_exposure=args.root_mcp_exposure),
+        mounts=exposure_mounts,
         project_dsh_tools=args.tool_surface == "projected",
         enable_chatgpt_web_companion=args.experimental_chatgpt_web_companion,
     )

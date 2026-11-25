@@ -46,7 +46,9 @@ class EmbeddedOAuthConfig:
     pending_ttl_s: int = 600
     code_ttl_s: int = 300
     access_token_ttl_s: int = 3600
-    refresh_token_ttl_s: int = 30 * 24 * 3600
+    refresh_token_ttl_s: int = 180 * 24 * 3600
+    unauthorized_registration_ttl_s: int = 7 * 24 * 3600
+    resource_urls: tuple[str, ...] = ()
     max_registered_clients: int = 256
     max_client_metadata_bytes: int = 32 * 1024
     max_registration_request_bytes: int = 64 * 1024
@@ -79,7 +81,13 @@ class EmbeddedOAuthConfig:
             raise ValueError("at least one non-empty required OAuth scope is required")
         if not set(self.required_scopes).issubset(self.scopes):
             raise ValueError("required OAuth scopes must be a subset of allowed scopes")
-        for name in ("pending_ttl_s", "code_ttl_s", "access_token_ttl_s", "refresh_token_ttl_s"):
+        for name in (
+            "pending_ttl_s",
+            "code_ttl_s",
+            "access_token_ttl_s",
+            "refresh_token_ttl_s",
+            "unauthorized_registration_ttl_s",
+        ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
         for name in (
@@ -94,6 +102,30 @@ class EmbeddedOAuthConfig:
                 raise ValueError(f"{name} must be a positive integer")
         if self.max_pending_per_client > self.max_pending_authorizations:
             raise ValueError("max_pending_per_client must not exceed max_pending_authorizations")
+        primary_resource = urlparse(self.resource_url)
+        for url in (self.resource_url, *self.resource_urls):
+            if not isinstance(url, str) or not url:
+                raise ValueError("resource URLs must be non-empty strings")
+            resource = urlparse(url)
+            if resource.scheme not in {"http", "https"} or not resource.hostname:
+                raise ValueError("resource URLs must be absolute HTTP(S) URLs")
+            if resource.username is not None or resource.password is not None:
+                raise ValueError("resource URLs must not contain user info")
+            if resource.params or resource.query or resource.fragment:
+                raise ValueError("resource URLs must not contain params, query, or fragment")
+            try:
+                _ = resource.port
+            except ValueError as exc:
+                raise ValueError("resource URLs must contain valid ports") from exc
+            if (resource.scheme, resource.netloc) != (primary_resource.scheme, primary_resource.netloc):
+                raise ValueError("all resource URLs must share the resource server origin")
+
+    def accepted_resource_urls(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.resource_url, *self.resource_urls)))
+
+    def resource_origin(self) -> tuple[str, str]:
+        resource = urlparse(self.resource_url)
+        return resource.scheme, resource.netloc
 
 
 APPROVAL_FORM_MAX_BYTES = 8 * 1024
@@ -355,7 +387,9 @@ class OAuthStore:
                 """
                 CREATE TABLE IF NOT EXISTS oauth_clients (
                     client_id TEXT PRIMARY KEY,
-                    client_json TEXT NOT NULL
+                    client_json TEXT NOT NULL,
+                    created_at REAL,
+                    authorized_at REAL
                 );
                 CREATE TABLE IF NOT EXISTS pending_authorizations (
                     request_id TEXT PRIMARY KEY,
@@ -458,6 +492,21 @@ class OAuthStore:
             if "state" not in authorization_code_columns:
                 connection.execute("ALTER TABLE authorization_codes ADD COLUMN state TEXT")
 
+            client_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(oauth_clients)").fetchall()
+            }
+            if "created_at" not in client_columns:
+                connection.execute("ALTER TABLE oauth_clients ADD COLUMN created_at REAL")
+            if "authorized_at" not in client_columns:
+                connection.execute("ALTER TABLE oauth_clients ADD COLUMN authorized_at REAL")
+            # Rows predating lifecycle bookkeeping cannot be classified. Preserve
+            # them as authorized rather than risking deletion of a live connector.
+            migration_now = time.time()
+            connection.execute(
+                "UPDATE oauth_clients SET created_at = ?, authorized_at = COALESCE(authorized_at, ?) WHERE created_at IS NULL",
+                (migration_now, migration_now),
+            )
+
             # Create secondary indexes after any legacy token-table rebuild so
             # DROP TABLE cannot silently remove the fresh token indexes.
             connection.executescript(
@@ -490,17 +539,19 @@ class OAuthStore:
         db.execute("DELETE FROM access_tokens WHERE expires_at <= ?", (int(now),))
         db.execute("DELETE FROM refresh_tokens WHERE expires_at <= ?", (int(now),))
 
-    def save_client(self, client: OAuthClientInformationFull) -> None:
-        with self.connection() as db:
-            db.execute(
-                "INSERT OR REPLACE INTO oauth_clients(client_id, client_json) VALUES (?, ?)",
-                (client.client_id, client.model_dump_json()),
-            )
+    @staticmethod
+    def _prune_unauthorized_registrations(db: sqlite3.Connection, *, now: float, ttl_s: int) -> None:
+        db.execute(
+            "DELETE FROM oauth_clients WHERE authorized_at IS NULL AND created_at <= ?",
+            (now - ttl_s,),
+        )
 
-    def save_client_limited(self, client: OAuthClientInformationFull, *, max_clients: int) -> bool:
+    def save_client_limited(self, client: OAuthClientInformationFull, *, max_clients: int, unauthorized_ttl_s: int) -> bool:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            self._prune_expired(db, now=time.time())
+            now = time.time()
+            self._prune_expired(db, now=now)
+            self._prune_unauthorized_registrations(db, now=now, ttl_s=unauthorized_ttl_s)
             existing = db.execute(
                 "SELECT 1 FROM oauth_clients WHERE client_id = ?",
                 (client.client_id,),
@@ -510,8 +561,12 @@ class OAuthStore:
                 if count >= max_clients:
                     return False
             db.execute(
-                "INSERT OR REPLACE INTO oauth_clients(client_id, client_json) VALUES (?, ?)",
-                (client.client_id, client.model_dump_json()),
+                """
+                INSERT INTO oauth_clients(client_id, client_json, created_at, authorized_at)
+                VALUES (?, ?, ?, NULL)
+                ON CONFLICT(client_id) DO UPDATE SET client_json = excluded.client_json
+                """,
+                (client.client_id, client.model_dump_json(), time.time()),
             )
         return True
 
@@ -524,28 +579,6 @@ class OAuthStore:
         if row is None:
             return None
         return OAuthClientInformationFull.model_validate_json(row["client_json"])
-
-    def save_pending(self, pending: PendingAuthorization) -> None:
-        with self.connection() as db:
-            db.execute(
-                """
-                INSERT OR REPLACE INTO pending_authorizations(
-                    request_id, client_id, scopes_json, code_challenge,
-                    redirect_uri, redirect_uri_explicit, resource, state, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    pending.request_id,
-                    pending.client_id,
-                    json.dumps(pending.scopes),
-                    pending.code_challenge,
-                    pending.redirect_uri,
-                    int(pending.redirect_uri_provided_explicitly),
-                    pending.resource,
-                    pending.state,
-                    pending.expires_at,
-                ),
-            )
 
     def save_pending_limited(
         self,
@@ -629,6 +662,10 @@ class OAuthStore:
             if row is None:
                 return None
             db.execute("DELETE FROM pending_authorizations WHERE request_id = ?", (request_id,))
+            db.execute(
+                "UPDATE oauth_clients SET authorized_at = ? WHERE client_id = ?",
+                (now, row["client_id"]),
+            )
             db.execute(
                 """
                 INSERT INTO authorization_codes(
@@ -904,6 +941,7 @@ class EmbeddedOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
             self.store.save_client_limited,
             client_info,
             max_clients=self.config.max_registered_clients,
+            unauthorized_ttl_s=self.config.unauthorized_registration_ttl_s,
         )
         if not saved:
             raise RegistrationError(
@@ -913,7 +951,7 @@ class EmbeddedOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         resource = params.resource or self.config.resource_url
-        if resource != self.config.resource_url:
+        if resource not in self.config.accepted_resource_urls():
             raise AuthorizeError(error="invalid_target", error_description="unknown OAuth resource")
         scopes = tuple(params.scopes or self.config.scopes)
         if not set(scopes).issubset(self.config.scopes):
@@ -975,7 +1013,7 @@ class EmbeddedOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
         row = await asyncio.to_thread(self.store.load_refresh, refresh_token, client.client_id)
         if (
             row is None
-            or row["resource"] != self.config.resource_url
+            or row["resource"] not in self.config.accepted_resource_urls()
             or row["issuer"] != self.config.issuer_url
         ):
             return None
@@ -996,7 +1034,7 @@ class EmbeddedOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
         scopes: list[str],
     ) -> OAuthToken:
         if (
-            refresh_token.resource != self.config.resource_url
+            refresh_token.resource not in self.config.accepted_resource_urls()
             or refresh_token.issuer != self.config.issuer_url
         ):
             raise TokenError(error="invalid_grant", error_description="refresh token belongs to another issuer or resource")
@@ -1026,7 +1064,7 @@ class EmbeddedOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
         row = await asyncio.to_thread(self.store.load_access, token)
         if (
             row is None
-            or row["resource"] != self.config.resource_url
+            or row["resource"] not in self.config.accepted_resource_urls()
             or row["issuer"] != self.config.issuer_url
         ):
             return None
@@ -1085,9 +1123,10 @@ def advertise_public_client_auth_methods(app: Any, auth: Any) -> None:
 
     MCP 2.0's token/revocation authenticators accept DCR clients registered with
     ``token_endpoint_auth_method=none`` at the token endpoint, but its metadata
-    builder currently advertises only the two client-secret methods. Rebuild
-    only the metadata route from the SDK's own metadata/CORS primitives and add
-    that implemented token capability; all protocol handlers remain upstream-owned.
+    builder currently advertises only the two client-secret methods. Rebuild the
+    metadata route from the SDK's own metadata/CORS primitives, add that implemented
+    token capability, and serve the same document at path-inserted discovery
+    suffixes; all protocol handlers remain upstream-owned.
     """
     from mcp.server.auth.handlers.metadata import MetadataHandler
     from mcp.server.auth.routes import build_metadata, cors_middleware
@@ -1111,12 +1150,24 @@ def advertise_public_client_auth_methods(app: Any, auth: Any) -> None:
     for index, route in enumerate(app.routes):
         if not isinstance(route, Route) or route.path != metadata_path:
             continue
+        handler = cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"])
         app.routes[index] = Route(
             metadata_path,
-            endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
+            endpoint=handler,
             methods=["GET", "OPTIONS"],
             name=route.name,
         )
+        suffix_path = f"{metadata_path}/{{suffix:path}}"
+        if not any(isinstance(existing, Route) and existing.path == suffix_path for existing in app.routes):
+            app.routes.insert(
+                index + 1,
+                Route(
+                    suffix_path,
+                    endpoint=handler,
+                    methods=["GET", "OPTIONS"],
+                    name="oauth-authorization-server-metadata-suffix",
+                ),
+            )
         return
     raise RuntimeError("MCP authorization-server metadata route was not found")
 

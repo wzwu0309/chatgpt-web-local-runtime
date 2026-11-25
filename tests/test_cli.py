@@ -62,6 +62,14 @@ class CliTests(unittest.TestCase):
             )
 
         self.assertEqual(result, 0)
+        self.assertEqual(
+            captured["config"].resource_urls,
+            (
+                "https://gateway.example.com/chatgpt/mcp",
+                "https://gateway.example.com/gemini/mcp",
+                "https://gateway.example.com/mcp",
+            ),
+        )
         self.assertIsInstance(captured["mounts"]["/chatgpt/mcp"], ChatgptExposure)
         self.assertIsInstance(captured["mounts"]["/gemini/mcp"], GenericExposure)
         self.assertIs(captured["mounts"]["/mcp"], captured["mounts"]["/chatgpt/mcp"])

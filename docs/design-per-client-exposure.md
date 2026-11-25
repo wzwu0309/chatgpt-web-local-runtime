@@ -1,6 +1,6 @@
 # 设计草案:按客户端策略暴露工具格式与显式 workspace 信封
 
-- 状态: **实施中(①bridge/②gateway 已完成,③④⑤待续)**
+- 状态: **实施中(①bridge/②gateway/③OAuth 已完成,④⑤待续)**
 - 日期: 2026-11-25
 - 关联: 与 `upgrade-to-dsh-0.2.md` **正交**——两者独立分支、独立合并、互不为前置
 
@@ -241,7 +241,10 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
       DCR 注册(grant_types/auth_method 与 ChatGPT 完全同构,public PKCE)。
       注:该注册走 sandbox/test redirect,属 Developer Mode 设施;正式路径
       机制相同。剩余硬要求:well-known 端点对任意路径后缀服务(两层路径挂载);
-- [ ] OAuth 运维两项实施:DCR 分层回收 + refresh TTL 180d(第二轮定稿);
+- [x] OAuth 运维两项实施完成:DCR 分层回收(未授权 7d 回收/已授权冗余保留,
+      迁移期不可分类旧行一律按已授权保留)+ refresh TTL 180d;well-known
+      authorization-server metadata 对任意后缀服务,protected-resource metadata
+      与 WWW-Authenticate resource_metadata 按实际挂载路径生成;
 - [ ] generic exposure 的 catalog 投影需与 0.2.x 执行面条件(toolSet/`when`)
       保持一致求值——catalog 过滤不能只是名称黑名单,要与执行面同一解析路径
       (升级适配 6 的直接教训)。
@@ -254,11 +257,11 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   全程零破损窗口;"暂不动"是部署排序,非兼容代码。
 - **实施进度(2026-11-25)**:✅ ①bridge 完成(commit a429939,信封
   workspace+优先级链+binding 轴过滤+sessionId 缺席加固);✅ ②gateway
-  exposure 对象/三挂载路由/教义文案/健康信号完成(本提交;`/chatgpt/mcp`
-  ChatgptExposure,`/gemini/mcp` 与 `/mcp` GenericExposure,`--root-mcp-exposure
-  chatgpt` 供阶段一切换);⬜ ③OAuth 三件套(well-known 任意后缀/
-  分层回收/refresh 180d);⬜ ④golden-path 双侧验证;⬜ ⑤两阶段部署。
-  ③④⑤ 待续,按本文档规格实施即可。
+  exposure 对象/三挂载路由/教义文案/健康信号完成(commit 4900e57;
+  `/chatgpt/mcp` ChatgptExposure,`/gemini/mcp` 与 `/mcp` GenericExposure,
+  `--root-mcp-exposure chatgpt` 供阶段一切换);✅ ③OAuth 三件套完成
+  (well-known 任意后缀/分层回收/refresh 180d,本提交);⬜ ④golden-path
+  双侧验证;⬜ ⑤两阶段部署。④⑤ 待续,按本文档规格实施即可。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。

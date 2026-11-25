@@ -46,7 +46,8 @@ class FakeHarnessBridge:
         return {"isError": False, "content": [{"type": "text", "text": "ok"}], "value": {"ok": True}}
 
 
-def complete_public_client_oauth(client: TestClient, config: EmbeddedOAuthConfig) -> str:
+def complete_public_client_oauth(client: TestClient, config: EmbeddedOAuthConfig, *, resource_url: str | None = None) -> str:
+    resource_url = resource_url or config.resource_url
     verifier = "v" * 48
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     redirect_uri = "https://example.com/client-callback"
@@ -74,7 +75,7 @@ def complete_public_client_oauth(client: TestClient, config: EmbeddedOAuthConfig
             "state": "mount-test",
             "code_challenge": challenge,
             "code_challenge_method": "S256",
-            "resource": config.resource_url,
+            "resource": resource_url,
         },
         follow_redirects=False,
     )
@@ -95,7 +96,7 @@ def complete_public_client_oauth(client: TestClient, config: EmbeddedOAuthConfig
             "code": callback["code"][0],
             "redirect_uri": redirect_uri,
             "code_verifier": verifier,
-            "resource": config.resource_url,
+            "resource": resource_url,
         },
     )
     assert token.status_code == 200, token.text
@@ -151,6 +152,7 @@ class GatewayMountTests(unittest.TestCase):
         config = EmbeddedOAuthConfig(
             issuer_url="http://127.0.0.1",
             resource_url="http://127.0.0.1/mcp",
+            resource_urls=("http://127.0.0.1/chatgpt/mcp", "http://127.0.0.1/gemini/mcp"),
             state_db=state_root / "oauth.sqlite3",
             admin_pin="test-admin-pin",
         )
@@ -182,6 +184,10 @@ class GatewayMountTests(unittest.TestCase):
                         json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}},
                     )
                     self.assertEqual(unauthenticated.status_code, 401, path)
+                    self.assertIn(
+                        f'resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource{path}"',
+                        unauthenticated.headers["www-authenticate"],
+                    )
 
                 token = complete_public_client_oauth(client, gateway.provider.config)
                 surfaces = {}
@@ -244,6 +250,56 @@ class GatewayMountTests(unittest.TestCase):
                 },
             ],
         )
+
+    def test_mounts_must_have_matching_oauth_resource_urls(self) -> None:
+        config = EmbeddedOAuthConfig(
+            issuer_url="http://127.0.0.1",
+            resource_url="http://127.0.0.1/mcp",
+            state_db=Path("/tmp/unused-oauth.sqlite3"),
+            admin_pin="test-admin-pin",
+        )
+        with self.assertRaisesRegex(ValueError, "missing for exposure mounts"):
+            EmbeddedOAuthGateway(FakeHarnessBridge(), config, mounts=default_exposure_mounts())
+
+    def test_discovery_metadata_is_served_for_nested_mount_suffixes(self) -> None:
+        bridge = FakeHarnessBridge()
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = self.build_gateway(bridge, Path(tmp).resolve())
+            app = gateway.build_app(json_response=True, host="127.0.0.1")
+            with TestClient(app, base_url="http://127.0.0.1") as client:
+                authorization_metadata = client.get("/.well-known/oauth-authorization-server/chatgpt/mcp")
+                arbitrary_suffix_metadata = client.get("/.well-known/oauth-authorization-server/future/client/path")
+                protected_metadata = client.get("/.well-known/oauth-protected-resource/chatgpt/mcp")
+                gemini_protected_metadata = client.get("/.well-known/oauth-protected-resource/gemini/mcp")
+                root_protected_metadata = client.get("/.well-known/oauth-protected-resource/mcp")
+
+        self.assertEqual(authorization_metadata.status_code, 200)
+        self.assertIn("none", authorization_metadata.json()["token_endpoint_auth_methods_supported"])
+        self.assertEqual(arbitrary_suffix_metadata.status_code, 200)
+        self.assertEqual(protected_metadata.status_code, 200)
+        self.assertEqual(protected_metadata.json()["resource"], "http://127.0.0.1/chatgpt/mcp")
+        self.assertEqual(gemini_protected_metadata.status_code, 200)
+        self.assertEqual(gemini_protected_metadata.json()["resource"], "http://127.0.0.1/gemini/mcp")
+        self.assertEqual(root_protected_metadata.status_code, 200)
+        self.assertEqual(root_protected_metadata.json()["resource"], "http://127.0.0.1/mcp")
+
+    def test_nested_mount_resource_completes_oauth_and_opens_an_mcp_session(self) -> None:
+        bridge = FakeHarnessBridge()
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = self.build_gateway(bridge, Path(tmp).resolve())
+            security = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=["127.0.0.1", "127.0.0.1:*"],
+                allowed_origins=[],
+            )
+            app = gateway.build_app(json_response=True, transport_security=security, host="127.0.0.1")
+            with TestClient(app, base_url="http://127.0.0.1") as client:
+                token = complete_public_client_oauth(
+                    client,
+                    gateway.provider.config,
+                    resource_url="http://127.0.0.1/chatgpt/mcp",
+                )
+                initialize_mcp(client, "/chatgpt/mcp", token)
 
     def test_missing_chatgpt_conversation_identity_becomes_visible_in_healthz(self) -> None:
         bridge = FakeHarnessBridge()
