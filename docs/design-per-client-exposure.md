@@ -265,7 +265,9 @@ fs 工具的默认视图)。两者正交但极易被模型混用——Gemini 面
   golden-path 双侧验证完成(隔离 DSH 实例上 `validation/golden-path.mjs`
   全探针通过,`validation/exposure-golden-path.mjs` 14 项检查通过;
   显式 workspace 路由/越界拒绝/缺省回落/序列一致性/绑定表零写入均实证);
-  ⬜ ⑤两阶段部署。⑤ 待续,按本文档规格实施即可。
+  ⬜ ⑤两阶段部署。start.sh/start.ps1 已接入
+  `DSH_MCP_ROOT_MCP_EXPOSURE`(默认 chatgpt 保stage一,迁移后改 generic);
+  实际部署/连接器迁移/阶段二翻转待 operator 确认后执行。
 - 验证可复用 golden-path 思路:ChatGPT 面回归(现状不变)+ Gemini 面
   模拟请求(workspace 显式路由、越界拒绝、缺省回落、序列一致性、
   绑定表零写入)。
