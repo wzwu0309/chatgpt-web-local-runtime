@@ -41,6 +41,11 @@ if ! mkdir -p "$WORKSPACE" 2>/dev/null; then
   echo "Check permissions or set WORKSPACE in env.conf." >&2
   exit 1
 fi
+if ! DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS="${DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS:-}" \
+  node "$GW_HOME/deploy/dsh/validate-additional-roots.cjs"; then
+  echo "Fix DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS in env.conf." >&2
+  exit 1
+fi
 
 # Startup-level logs are truncated on each launch; the gateway's
 # execution log rotates by size inside the process instead.
@@ -54,6 +59,7 @@ if ! curl -sf --max-time 2 "http://127.0.0.1:$DSH_HOST_PORT/api/chatgpt-bridge/r
     DSH_MCP_PUBLIC_BASE_URL="${WORKER_PUBLIC_URL:-https://placeholder.invalid}" \
     DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}" \
     WORKSPACE_ALLOWED_ROOT="$WORKSPACE_ALLOWED_ROOT" \
+    DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS="${DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS:-}" \
     PATH="$(dirname "$DSH_BIN"):$PATH" \
     bash -c 'log="$1"; shift; (exec nohup "$@" </dev/null >>"$log" 2>&1 &)' \
       _ /tmp/dsh-web-host.log "$DSH_BIN" --profile web --patch "$PATCH_YML" \

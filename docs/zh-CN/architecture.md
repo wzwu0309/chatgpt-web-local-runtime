@@ -88,6 +88,11 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 `workspace` 的目标必须位于允许根内。若启动根本身位于允许根之外，调用仍可
 因未绑定/省略 `workspace` 而落在那里，但不能通过这两种机制把界外
 `WORKSPACE` 显式设为目标。
+- `DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS`(env，默认空）是部署级额外可写目录，
+  值为绝对物理路径组成的 JSON 数组。它是写授权，不是工作区路由权限，也不扩大
+  `WORKSPACE_ALLOWED_ROOT`；对所有客户端和会话生效。条目在使用时必须存在、是目录
+  且不能经符号链接拼写。macOS/Linux 的 shell 进程沙箱与 DSH 文件工具都遵守；
+  Windows 只有 DSH 文件工具遵守，子进程沙箱忽略额外目录。
 - bridge 内部的工作区优先级为：显式 envelope `workspace` >
   conversation 持久绑定 > 启动根 `WORKSPACE`。生产 mount 不让两种模式混用：
   ChatGPT exposure 拒绝 `workspace` 参数，generic exposure 不参与绑定。
@@ -127,8 +132,8 @@ conversation 在允许子树内各自持根，重启不丢；持久条目加载�
 ## 安全模型
 
 - 公网路径端到端认证：OAuth 动态注册 + PKCE,authorize 时要 owner PIN,所有 MCP mount 都走 Bearer token。光泄露 tunnel URL 什么都拿不到。
-- `bash`/`pwsh` **受沙箱约束**(`workspace-write`)：只允许写当前工作区根（+ 系统临时目录）。macOS 用 Seatbelt,Windows 用 `windows-acl`（部分强制）,Linux 用 bwrap。
-- `read`/`write`/`edit` 文件工具走自己的访问模型 —— **不**套 shell 沙箱，能写工作区外。
+- `bash`/`pwsh` **受沙箱约束**(`workspace-write`)：允许写当前工作区根、系统临时目录和部署级 `additionalWritableRoots`。macOS 用 Seatbelt,Windows 用 `windows-acl`（部分强制）,Linux 用 bwrap；Windows 进程沙箱不应用额外目录。
+- `write`/`edit` 等文件写操作由 `fs-sandbox` 按同一套 writable roots 约束；读取不因此受限。
 - `sandbox_permissions` 提权参数存在于工具 schema 但**在这里不可用**:`approval.request()` 必须发生在 agent turn 内；bridge helper 没有 turn → 报 `approval.request() outside an open turn`。不是 bug，不用追。
 - Worker 能看到明文（TLS 在 CF 边缘终止）；内层 OAuth+PIN 就是为此存在。
 
@@ -144,6 +149,7 @@ conversation 在允许子树内各自持根，重启不丢；持久条目加载�
 8. **会话钉死 `sandboxMode`** —— helper 会话保留创建时记录的 mode；部署级 `mode` 改动不回溯生效。但工作区根始终从 `session.header.cwd` 实时解析。
 9. **host 重启窗口 = "连续内部错误"** —— `:3081` 挂掉期间每个 `/call` 都 ECONNREFUSED。客户端报这个时先查 host 存活（`/api/chatgpt-bridge/revision`)。
 10. **Gemini 单会话 MCP 工具调用上限（实测）** —— 2026-11-26T04:53:26Z 在 Gemini 客户端 `1.147.6.1557 (1.147.6.1557)` 观察到：同一对话可访问 MCP 工具的次数会被客户端限制。具体阈值和报错原文未记录，官方文档也未说明；影响整个 MCP 工具面，不是本桥或某个工具的配额。使用中避免把任务拆成大量琐碎、重复调用；触发后先按客户端限制排查，不要误判为 gateway/DSH 故障。
+11. **修改额外可写目录后必须重启 DSH host** —— 启动器会复用健康 host；新 env 值只有在 host 用新 patch 重启后才可靠生效。已在运行的进程保留启动时授予的权限。
 
 ## 部署
 

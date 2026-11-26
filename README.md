@@ -162,6 +162,11 @@ Clients work in a selected **workspace**, not the whole disk by default.
   the allowed root because it is set by the operator, but clients cannot
   explicitly route to it in that case. Unbound ChatGPT calls and generic
   calls without `workspace` use this root.
+- **`DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS` (env):** deployment-wide extra
+  writable directories, as a JSON array of absolute physical paths. This is
+  a write grant, not workspace routing, and applies to every client/session.
+  On macOS/Linux it covers sandboxed shell commands and file tools; on
+  Windows it covers file tools only, not sandboxed processes.
 - **ChatGPT exposure (`/chatgpt/mcp`):** `workspace_switch` binds only the
   calling conversation, and `workspace_status` reports its workspace.
   Bindings use `x-openai-session` and persist in
@@ -173,9 +178,10 @@ Clients work in a selected **workspace**, not the whole disk by default.
   `workdir`. The generic exposure does not offer `workspace_switch`,
   `workspace_status`, or `task_state`.
 - **Sandbox boundary:** sandboxed `bash`/`pwsh` writes are confined to the
-  active root plus OS temporary directories. The `read`/`write`/`edit`
-  tools follow their own access model. Routing selects a helper session
-  keyed by the new cwd; it does not change existing DSH sessions.
+  active root, OS temporary directories, and configured extra writable roots.
+  Mutating file tools such as `write`/`edit` are fenced by the same DSH file
+  sandbox. Routing selects a helper session keyed by the new cwd; it does not
+  change existing DSH sessions.
 
 ## Credits
 

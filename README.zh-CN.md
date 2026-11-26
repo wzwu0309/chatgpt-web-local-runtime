@@ -155,6 +155,10 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
   默认根：ChatGPT 会话尚未绑定前落在这里，通用调用省略 `workspace` 时也落在这里。
   它是运营者拥有的入口，本身不强制位于允许根内；但若位于界外，客户端不能用
   `workspace_switch` 或 `workspace` 把它显式设为目标。
+- **`DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS`(环境变量)—— 部署级额外可写目录。**
+  JSON 数组，元素为绝对物理目录路径。它是写授权，不扩大工作区路由范围，对所有
+  客户端和会话生效。macOS/Linux 下同时适用于沙箱 shell 与文件工具；Windows 下
+  只适用于文件工具，子进程沙箱忽略这些额外目录。
 - **ChatGPT 面：会话绑定。** `/chatgpt/mcp` 暴露
   `workspace_switch`/`workspace_status`。绑定以 ChatGPT 每会话携带的
   `x-openai-session` 头为键，持久化在
@@ -166,10 +170,10 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
   参数：每次调用显式选择项目根；省略则使用 `WORKSPACE`。要继续同一项目，
   后续调用重复传同一个 `workspace` 值。它是路由键，不会进入目标工具的
   `arguments`，也不同于工具级的 `workdir`（后者只改变已选项目内单条命令的目录）。
-- **边界**：沙箱化的 `bash`/`pwsh` 只能写活动根以内；`read`/`write`/
-  `edit` 文件工具走自己的访问模型。切换/路由**不**修改既有 DSH 会话；
-  bridge 退役旧 helper，并按新 cwd 惰性创建/复用 helper 会话，沙箱边界
-  等于 helper 会话 `cwd`。
+- **边界**：沙箱化的 `bash`/`pwsh` 只能写活动根、系统临时目录和部署级
+  额外可写目录；`write`/`edit` 等文件写操作由同一套 DSH 文件沙箱约束。
+  切换/路由**不**修改既有 DSH 会话；bridge 退役旧 helper，并按新 cwd
+  惰性创建/复用 helper 会话，沙箱边界等于 helper 会话 `cwd`。
 
 密钥类内容（`env.conf`、`ADMIN_PIN.txt`、`state/`）由 `.gitignore` 挡在
 版本控制外——它们就生成在本目录里，但绝不入库。

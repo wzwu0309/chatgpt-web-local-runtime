@@ -12,7 +12,11 @@ $confPath = Join-Path $PSScriptRoot 'env.conf'
 if (Test-Path $confPath) {
     Get-Content $confPath | ForEach-Object {
         if ($_ -match '^\s*([^#\s][^=]*)=(.*)$') {
-            [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), 'Process')
+            $value = $Matches[2].Trim()
+            $singleQuoted = $value.Length -ge 2 -and $value.StartsWith("'") -and $value.EndsWith("'")
+            $doubleQuoted = $value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')
+            if ($singleQuoted -or $doubleQuoted) { $value = $value.Substring(1, $value.Length - 2) }
+            [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $value, 'Process')
         }
     }
 }
@@ -40,6 +44,10 @@ if ((Test-Path $WORKSPACE) -and -not (Test-Path $WORKSPACE -PathType Container))
 }
 try { New-Item -ItemType Directory -Force $WORKSPACE | Out-Null } catch {
     Write-Error "WORKSPACE '$WORKSPACE' could not be created - check permissions or set WORKSPACE in env.conf"; exit 1
+}
+if ($env:DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS) {
+    & node (Join-Path $GwHome 'deploy\dsh\validate-additional-roots.cjs')
+    if ($LASTEXITCODE -ne 0) { Write-Error 'Fix DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS in env.conf'; exit 1 }
 }
 
 # Materialize the patch: plugin `name:` fields need real absolute paths.

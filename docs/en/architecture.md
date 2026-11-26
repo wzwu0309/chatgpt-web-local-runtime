@@ -104,6 +104,13 @@ changes. Use `src/` and the tests as the current reference, not the patch.
   directory. This operator-controlled root may be outside the allowed
   subtree: calls can still use it by default, but clients cannot select
   it explicitly with `workspace_switch` or `workspace`.
+- `DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS` (default empty) configures
+  deployment-wide extra writable directories as a JSON array of absolute
+  physical paths. It is a write grant, not workspace routing, and does not
+  extend `WORKSPACE_ALLOWED_ROOT`; it applies to every client/session. Entries
+  must exist, be directories, and not be symlinked spellings when used.
+  macOS/Linux shell confinement and DSH file tools honor them; on Windows only
+  file tools honor them, while process confinement ignores extra roots.
 - The bridge checks an explicit `workspace` envelope first, then a
   conversation binding if applicable, then `WORKSPACE`. Public mounts do
   not mix the two routing modes. An explicit workspace is a per-call
@@ -151,8 +158,8 @@ does not maintain a second allowlist.
 ## Security model
 
 - Every public MCP mount requires an OAuth Bearer token. Onboarding uses dynamic client registration, PKCE, and owner PIN approval. The tunnel URL alone grants no access.
-- `bash`/`pwsh` runs **confined** (`workspace-write`): writes allowed under the active workspace root (+ OS temp). Seatbelt on macOS, `windows-acl` (partial) on Windows, bwrap on Linux.
-- `read`/`write`/`edit` file tools follow their own access model — they are **not** wrapped in the shell sandbox and can write outside the workspace.
+- `bash`/`pwsh` runs **confined** (`workspace-write`): writes allowed under the active workspace root, OS temp, and deployment-level `additionalWritableRoots`. Seatbelt on macOS, `windows-acl` (partial) on Windows, bwrap on Linux; Windows process confinement does not apply extra roots.
+- Mutating file tools such as `write`/`edit` are fenced by `fs-sandbox` under the same writable roots; reads are not restricted by that write fence.
 - `sandbox_permissions` escalation exists in the tool schema but is **unusable here**: `approval.request()` must run inside an agent turn; bridge helpers never run turns → `approval.request() outside an open turn` error. Not a bug to chase.
 - TLS terminates at Cloudflare; the Worker can see plaintext. The gateway still enforces OAuth on each MCP mount.
 
@@ -168,6 +175,7 @@ does not maintain a second allowlist.
 8. **Session-pinned `sandboxMode`** — helper sessions keep the mode recorded at creation; deployment-level `mode` changes don't retro-apply. Workspace root still resolves live from `session.header.cwd`.
 9. **Host restart window = "continuous internal errors"** — while `:3081` is down every `/call` ECONNREFUSEDs. If ChatGPT reports this, check host liveness first (`/api/chatgpt-bridge/revision`).
 10. **Gemini per-conversation MCP tool-call cap (observed)** — on 2026-11-26T04:53:26Z, Gemini client `1.147.6.1557 (1.147.6.1557)` limited the number of MCP tool accesses in one conversation. The exact threshold and error text were not captured, and no official quota is documented. This affects the whole MCP tool surface; it is not a bridge or per-tool quota. Avoid splitting work into many repetitive calls, and troubleshoot a hit as a client-side limit before blaming the gateway or DSH.
+11. **Changing extra writable roots requires a DSH host restart** — the launchers reuse a healthy host; the new env value is reliable only after the host restarts with the new patch. Already-running processes keep the permissions they started with.
 
 ## Deployment
 

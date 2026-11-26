@@ -59,6 +59,12 @@
           - workspace_status
           - subagent_devin
 
-# NOTE: deployed dsh-runtime predates sandbox-policy's additionalWritableRoots
-# config (exists only in newer source); unknown keys are stripped silently.
-# Out-of-workspace bash writes go through workspace_switch instead.
+# Operator-configured deployment-wide extra writable directories. This row
+# restates the complete sandbox-policy config because cordis patch rows replace
+# config rather than merging into it.
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.cwd()
+    additionalWritableRoots: !!js JSON.parse((process.env.DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS || '').trim() || '[]')
