@@ -140,6 +140,13 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
    `dsh_tool_call.workspace`. If enabled, `subagent_devin` delegates to
    Devin (pinned to `swe-2-high`).
 
+**Gemini client limit (observed).** On 2026-11-26T04:53:26Z, Gemini client
+`1.147.6.1557 (1.147.6.1557)` limited MCP tool accesses within one
+conversation. This is not a bridge or per-tool quota; it is not documented
+officially, and the exact threshold/error text was not captured. Avoid
+repetitive, chatty tool use. See the operational caveats in
+[architecture.md](docs/en/architecture.md).
+
 ## Workspace
 
 Clients work in a selected **workspace**, not the whole disk by default.

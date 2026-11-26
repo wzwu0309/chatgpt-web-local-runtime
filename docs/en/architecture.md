@@ -167,6 +167,7 @@ does not maintain a second allowlist.
 7. **Reinstalling does not reload the DSH host** — Both launchers reuse a healthy host. After changing the bridge or its plugins, stop the existing host before relaunching. Gateway-only changes do not require a new tunnel.
 8. **Session-pinned `sandboxMode`** — helper sessions keep the mode recorded at creation; deployment-level `mode` changes don't retro-apply. Workspace root still resolves live from `session.header.cwd`.
 9. **Host restart window = "continuous internal errors"** — while `:3081` is down every `/call` ECONNREFUSEDs. If ChatGPT reports this, check host liveness first (`/api/chatgpt-bridge/revision`).
+10. **Gemini per-conversation MCP tool-call cap (observed)** — on 2026-11-26T04:53:26Z, Gemini client `1.147.6.1557 (1.147.6.1557)` limited the number of MCP tool accesses in one conversation. The exact threshold and error text were not captured, and no official quota is documented. This affects the whole MCP tool surface; it is not a bridge or per-tool quota. Avoid splitting work into many repetitive calls, and troubleshoot a hit as a client-side limit before blaming the gateway or DSH.
 
 ## Deployment
 
