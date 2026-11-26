@@ -6,6 +6,11 @@
 对话代理负责推理和决策，DSH 负责本地执行。ChatGPT Web 是首要场景；
 Gemini 等支持远程 MCP 的对话应用也可通过同一个公网入口使用 DSH。
 
+这里的 DSH 是作为**执行面**使用：工具运行时、沙箱、会话、技能、工作区和
+策略。正常链路不让 DSH 作为另一个模型驱动 agent 发起推理、选择下一步或运行
+AgentLoop，也不需要配置 `DEEPSEEK_API_KEY` 等模型 API key。显式 opt-in 的
+委派/provider 集成是独立扩展，不改变这条主链路的责任边界。
+
 ```
 Web Chat Agent（ChatGPT Web、Gemini 等） ──MCP+OAuth──> workers.dev 门面
         ──> 轮换的 quick tunnel ──> 本地 gateway :8766

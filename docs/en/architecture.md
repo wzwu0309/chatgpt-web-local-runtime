@@ -7,8 +7,15 @@ chooses when to call tools. ChatGPT Web is the primary use case, and
 Gemini is another example. The agent has the same role in a browser or
 in a desktop chat app; access requires a client that supports remote MCP.
 DeepSeek Harness (DSH) is the local execution authority for tools, sandboxing,
-skills, and workspaces. Normal use does not require a second reasoning model.
-This guide covers the architecture, components, deployment, and operations.
+skills, and workspaces. More precisely, this project uses DSH's **execution
+plane** — tool runtime, sandbox, sessions/jobs/skills/workspaces/policy — rather
+than using DSH as another model-driven agent. In the normal MCP tool path, DSH
+does not make model requests, choose next steps, or run an autonomous AgentLoop;
+reasoning and tool-use decisions belong entirely to the Web Chat Agent, and no
+model API key such as `DEEPSEEK_API_KEY` is required. Explicit opt-in
+delegation/provider integrations are separate extensions and do not change this
+main path. This guide covers the architecture, components, deployment, and
+operations.
 
 ```
 Web Chat Agent (ChatGPT Web, Gemini, ...)

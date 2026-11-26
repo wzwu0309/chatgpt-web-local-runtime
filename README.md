@@ -7,6 +7,13 @@ This project connects a **Web Chat Agent** to a local DeepSeek Harness
 ChatGPT Web is the primary use case. Gemini and other chat agents can use
 the same bridge through a client that supports remote MCP.
 
+DSH is used here as an **execution plane**: tool runtime, sandboxing,
+sessions, skills, workspaces, and policy. The normal path does not use DSH as
+another model-driven agent that reasons, chooses the next step, or runs an
+AgentLoop, and it does not require a model API key such as `DEEPSEEK_API_KEY`.
+Explicit opt-in delegation/provider integrations are separate extensions and
+do not change this responsibility boundary.
+
 ```
 Web Chat Agent (ChatGPT Web, Gemini, ...) ──MCP+OAuth──> workers.dev façade ──> rotating quick tunnel
         ──> local gateway :8766 ──> local DSH host :3081 ──> DSH tools/sandbox

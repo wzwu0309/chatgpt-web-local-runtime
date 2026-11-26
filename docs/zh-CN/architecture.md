@@ -6,7 +6,12 @@
 ChatGPT Web 是本项目的首要场景，Gemini 是另一种使用场景。这个术语描述的是
 对话端的角色，不限定界面是浏览器还是桌面应用；接入需要客户端支持远程 MCP。
 DeepSeek Harness（DSH）是本地执行权威，负责工具、沙箱、技能和工作区。
-日常运行不需要第二个模型接管推理。本文介绍架构、组件和部署运维。
+更准确地说，本项目使用的是 DSH 的**执行面**（tool runtime、sandbox、
+session/job/skill/workspace/policy），不是把 DSH 作为另一个模型驱动 agent。
+正常 MCP 工具链路中，DSH 不发起模型请求、不选择下一步、不运行自主 AgentLoop；
+推理与工具调用决策完全属于 Web Chat Agent，也不需要 `DEEPSEEK_API_KEY` 等模型
+API key。显式 opt-in 的委派/provider 集成是独立扩展，不改变这条主链路。
+本文介绍架构、组件和部署运维。
 
 ```
 Web Chat Agent（ChatGPT Web、Gemini 等）
