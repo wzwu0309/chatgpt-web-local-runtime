@@ -2,12 +2,12 @@
 
 [English](README.md) | 中文
 
-本项目以 ChatGPT Web 为主客户端、本地 DeepSeek Harness 作为受守护执行运行时，
-通过一个固定不变的公网 Worker origin 下的稳定 MCP mount 对外提供服务；
-Gemini 及其他客户端可共用 generic 执行面，该面不依赖持久会话标识。
+本项目把本地 DeepSeek Harness（DSH）接入 **Web Chat Agent（对话代理）**。
+对话代理负责推理和决策，DSH 负责本地执行。ChatGPT Web 是首要场景；
+Gemini 等支持远程 MCP 的对话应用也可通过同一个公网入口使用 DSH。
 
 ```
-ChatGPT / Gemini / 其他 MCP 客户端 ──MCP+OAuth──> workers.dev façade
+Web Chat Agent（ChatGPT Web、Gemini 等） ──MCP+OAuth──> workers.dev 门面
         ──> 轮换的 quick tunnel ──> 本地 gateway :8766
         ──> 本地 DSH host :3081 ──> DSH 工具/沙箱
 ```
@@ -16,8 +16,8 @@ MCP 客户端需要**固定不变的连接器 URL**，而 quick tunnel 每次启
 轮换。**Cloudflare Worker 门面**弥合这个缺口：它持有永久的
 `https://dsh-gw.<you>.workers.dev` origin，把当前 tunnel URL 存在 KV 里，
 `start.sh` 每次运行都重新发布（`PUT /_upstream`,Bearer 密钥保护）。
-连接器路径也固定：ChatGPT 用 `/chatgpt/mcp`,Gemini 用 `/gemini/mcp`,
-通用客户端用 `/mcp`。
+连接器路径也固定：ChatGPT 用 `/chatgpt/mcp`，Gemini 可用 `/gemini/mcp` 或
+`/mcp`，其中 `/mcp` 是标准通用入口。
 免费套餐够用 —— 控制台一次性配置：
 **[docs/zh-CN/cloudflare.md](docs/zh-CN/cloudflare.md)**。
 
@@ -124,7 +124,7 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
    [cloudflare.md](docs/zh-CN/cloudflare.md))、重启 gateway。
 3. 连接器 URL 永久不变：
    - ChatGPT:`https://dsh-gw.<you>.workers.dev/chatgpt/mcp`
-   - Gemini:`https://dsh-gw.<you>.workers.dev/gemini/mcp`
+   - Gemini：`https://dsh-gw.<you>.workers.dev/gemini/mcp`，也可使用下方通用入口。
    - 通用客户端：`https://dsh-gw.<you>.workers.dev/mcp`
 
    重新认证 = 用 `env.conf` 里的 owner PIN。

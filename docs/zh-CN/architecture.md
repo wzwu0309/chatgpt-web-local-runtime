@@ -1,15 +1,15 @@
-# MCP 客户端 → DSH 本地桥接 —— 架构与运维手册
+# Web Chat Agent → DSH 本地桥接 —— 架构与运维手册
 
 [English](../en/architecture.md) | 中文
 
-ChatGPT Web 是**首要推理 agent**，也是当前唯一拥有客户端特化 exposure 的
-客户端。DeepSeek Harness(DSH）在本地作为**执行权威**运行：工具、沙箱、会话、
-技能、工作区。generic MCP 面把同一执行权威暴露给 Gemini 等无可依赖持久
-会话标识的客户端。本文档记录最终可行的架构、每个文件的作用，以及全部
-运维注意事项。
+**Web Chat Agent（对话代理）**负责理解用户意图、推理和决定何时调用工具。
+ChatGPT Web 是本项目的首要场景，Gemini 是另一种使用场景。这个术语描述的是
+对话端的角色，不限定界面是浏览器还是桌面应用；接入需要客户端支持远程 MCP。
+DeepSeek Harness（DSH）是本地执行权威，负责工具、沙箱、技能和工作区。
+日常运行不需要第二个模型接管推理。本文介绍架构、组件和部署运维。
 
 ```
-ChatGPT / Gemini / 其他 MCP 客户端  (外部推理 agent)
+Web Chat Agent（ChatGPT Web、Gemini 等）
    │  MCP Streamable HTTP + OAuth (PKCE, 动态客户端注册)
    ▼
 https://dsh-gw.<you>.workers.dev            ← 固定 Worker origin / Cloudflare Worker 门面
@@ -21,7 +21,7 @@ https://dsh-gw.<you>.workers.dev            ← 固定 Worker origin / Cloudflar
 https://<random>.trycloudflare.com          ← 轮换的 quick tunnel，无感知
    │  cloudflared --protocol http2  (到 CF 边缘的持久出站连接)
    ▼
-dsh-mcp-gateway  :8766  (Python/FastAPI)
+dsh-mcp-gateway  :8766  (Python/Starlette)
    OAuth 校验 → 按 mount 选择 exposure → MCP 协议适配 → harness bridge
    │  /api/chatgpt-bridge/{revision,tools,call}
    ▼
@@ -36,6 +36,7 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 
 | 术语 | 含义 |
 |---|---|
+| **Web Chat Agent（对话代理）** | 直接与用户对话、负责推理和决策的上层代理；通过 MCP 委派本地执行，不是 DSH 的执行辅助 agent。 |
 | **ToolRuntime tool** | DSH 内部能力单元，注册在 `ctx.tools` 上（`bash`、`read`、`subagent_devin`…）。 |
 | **capability profile** | DSH 侧给外部 agent 的显式工具白名单，不是全量 ToolRuntime 转储。我们的：`chatgpt-external-v1`(`dsh-bridge-plugin/chatgpt-capability-profile.js`)。 |
 | **`allowExtraTools`** | bridge 配置项，把审查过的工具加进 profile。保留的 AgentLoop 生命周期名（`subagent`、`todo_write`…）会被 profile 自身拒绝。 |
@@ -113,12 +114,11 @@ conversation 在允许子树内各自持根，重启不丢；持久条目加载�
 禁用：`workspace_switch` 响亮失败，不会改写共享默认根；连续缺失会记录
 日志并经 gateway `/healthz` 暴露 degraded 信号。
 
-**Gemini/通用面。** Gemini 自定义应用已实测可走标准 DCR + PKCE + refresh
-token 自动续期，但其请求没有可依赖的每会话标识；因此它使用 generic
-exposure，而不是伪造共享绑定。模型每次调用通过 `workspace` 选择项目；要
-连续处理同一项目，就在后续调用重复传同一路径。省略 `workspace` 时使用
-`WORKSPACE`。`/mcp` 是 canonical generic mount,`/gemini/mcp` 是给 Gemini
-配置使用的同构命名入口；两者共享同一实现实例。
+**Gemini/通用面。** Gemini 自定义应用已实测可通过标准 DCR + PKCE 连接
+`/mcp`，网关会签发 refresh token。`/mcp` 是标准通用入口；`/gemini/mcp`
+是为 Gemini 命名的入口，两者共享同一个 `GenericExposure` 实例。这个执行面
+不读写会话绑定。每次调用可通过 `dsh_tool_call.workspace` 选择项目；要连续处理
+同一项目，后续调用传同一路径。省略 `workspace` 时使用 `WORKSPACE`。
 
 **发现即执行。** catalog 由 bridge 经 capability agent 与 `tools.resolve()`
 求值，和实际执行走同一 admitted toolSet；generic catalog 只是额外过滤会话
@@ -140,7 +140,7 @@ exposure，而不是伪造共享绑定。模型每次调用通过 `workspace` �
 4. **`workers.dev` 直连不通** —— 本机网络封 `*.workers.dev`；出站调用（`PUT /_upstream`、健康检查）走 `PROXY`。只影响 start.sh 自己的几条 curl——外部 MCP 客户端从互联网直连 Worker 无阻碍。
 5. **`--allowed-host` / OAuth SQLite** —— 网关需要本地源码改动；已预先打进 vendored 的 `dsh-mcp-gateway/src/`(editable 安装 → 改动即刻生效）。不要假设 `gateway-local-changes.patch` 覆盖这些及后续改动。
 6. **参数名错误伪装成"没权限"** —— 已在提示层修掉（callContract)。
-7. **`install.sh` 不等于 host 已重载** —— `start.sh` 会复用健康的 `:3081` host;bridge/plugin 代码变更后必须显式停掉该 host 一次再启动，否则旧插件仍在运行。gateway-only 变更可只重启 gateway，不必轮换 tunnel。
+7. **重新安装不会重载 DSH host** —— 两个平台的启动器都会复用健康的 host。修改 bridge 或插件后，重新启动前先停掉已有的 host。只改 gateway 则不需要轮换 tunnel。
 8. **会话钉死 `sandboxMode`** —— helper 会话保留创建时记录的 mode；部署级 `mode` 改动不回溯生效。但工作区根始终从 `session.header.cwd` 实时解析。
 9. **host 重启窗口 = "连续内部错误"** —— `:3081` 挂掉期间每个 `/call` 都 ECONNREFUSED。客户端报这个时先查 host 存活（`/api/chatgpt-bridge/revision`)。
 
@@ -157,9 +157,9 @@ exposure，而不是伪造共享绑定。模型每次调用通过 `workspace` �
 npm runtime → 生成 `env.conf`。安装器幂等 —— 代码目录全量刷新（含删除），
 而 `env.conf`、`state/`、`home/profiles/web/*` 等用户文件永不被覆盖。
 之后：部署 `worker/_worker.js` —— 分步见 [cloudflare.md](cloudflare.md) ——
-填 `env.conf`、跑启动器，然后按客户端配置连接器：ChatGPT 指向
-`$WORKER_PUBLIC_URL/chatgpt/mcp`,Gemini 指向 `$WORKER_PUBLIC_URL/gemini/mcp`,
-其他/generic 客户端指向 `$WORKER_PUBLIC_URL/mcp`。要与
+填 `env.conf`、跑启动器，然后按客户端配置连接器：ChatGPT 用
+`$WORKER_PUBLIC_URL/chatgpt/mcp`,generic 客户端用 `$WORKER_PUBLIC_URL/mcp`。
+Gemini 可用通用 URL 或 `$WORKER_PUBLIC_URL/gemini/mcp`。要与
 上游重同步 vendored 网关：将上游 `src/` 与 `dsh-mcp-gateway/src/` 重新 diff,
 逐项评估本地扩展如何迁移，并更新 `pyproject.toml` 里记录的 commit;不要
 直接重打 `gateway-local-changes.patch`。
@@ -176,16 +176,16 @@ Cloudflare 的域名）可以免掉代理，但属可选。
 - 启动器（`start.sh` / `start.ps1`）幂等：复用活着的
   `:3081` host，进程清理只匹配我们的端口，清空 tunnel 日志，分配新的
   quick tunnel，按新主机名推 `--allowed-host`，PUT 到 Worker，重启网关。
-- 连接器 URL **永远不变**:ChatGPT 用
-  `https://dsh-gw.<you>.workers.dev/chatgpt/mcp`,Gemini 用
-  `https://dsh-gw.<you>.workers.dev/gemini/mcp`,generic 客户端用
-  `https://dsh-gw.<you>.workers.dev/mcp`。重新认证用 owner PIN。
+- 连接器 URL 不随 tunnel 轮换改变:ChatGPT 用
+  `https://dsh-gw.<you>.workers.dev/chatgpt/mcp`,generic 客户端用
+  `https://dsh-gw.<you>.workers.dev/mcp`。Gemini 可用通用 URL 或
+  `https://dsh-gw.<you>.workers.dev/gemini/mcp`。重新认证用 owner PIN。
 - 健康探针：`GET /api/chatgpt-bridge/revision` → `{workspace,
   sandboxPolicy, toolRevision, …}`。
 - 日志在启动器的临时目录（macOS 为 `/tmp`,Windows 为 `$env:TEMP`):
-  `dsh-web-host.log`、`cloudflared.log`、`dsh-mcp-gateway.launch.log`
-  （启动级，每次启动截断）;`dsh-mcp-gateway.log` 是执行日志，
-  进程内单文件 8 MiB 截头限界。
+  `cloudflared.log`、`dsh-mcp-gateway.launch.log` 是启动级日志，每次启动
+  截断；`dsh-web-host.log` 只在启动 host 时截断（复用 host 时持续追加）。
+  `dsh-mcp-gateway.log` 是执行日志，进程内单文件 8 MiB 截头限界。
 - tunnel URL 随 cloudflared 进程存续 —— 进程死了，Worker 还指着死上游，
   需要重跑启动器发布新 URL。
 - 运行态全重置：停 host，如 helper 会话行为异常可删
@@ -235,10 +235,11 @@ ChatGPT ──MCP──> codexpro(Express + 官方 MCP SDK,/mcp)──> 进程�
 会话快照)以及不可用的 `sandbox_permissions` 提权,是"把通用
 harness 适配进 MCP"才存在的一类问题。
 
-**直接替换的可行性。** Worker 门面 + quick tunnel 这一层不挑后端:
+**后端替换。** Worker 门面 + quick tunnel 这一层不挑后端，可以复用，
+但指向 `/chatgpt/mcp` 的连接器必须改配到 CodexPro 的 `/mcp` 端点。
 `codexpro start --tunnel none --root ~/data --port 8787` 可以不动
 `_worker.js` 直接换掉 gateway+host —— `?codexpro_token=` 和
-`Authorization` 都能穿过原样代理,`/mcp` 路径相同,codexpro 也不
+`Authorization` 都能穿过原样代理,codexpro 也不
 校验 Host 头(不存在 421 类问题)。本地进程从三个减到两个。随之
 失去的是:OAuth 退化为 URL 内嵌静态 token,OS 沙箱换成路径校验,
 以及全部 DSH 能力(skills、jobs、持久 shell、subagent 委派)。

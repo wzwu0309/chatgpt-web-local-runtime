@@ -2,15 +2,16 @@
 
 English | [中文](../zh-CN/cloudflare.md)
 
-The Worker façade turns the rotating quick tunnel into a **permanent public
-URL** for the ChatGPT connector. One-time setup in the Cloudflare dashboard;
-the free tier is more than enough (100k requests/day, KV included).
+The Worker façade provides a **stable public origin** for remote MCP
+connectors while the quick tunnel rotates. One-time setup in the
+Cloudflare dashboard; the free tier is more than enough (100k
+requests/day, KV included).
 
 ```
 start.sh ──PUT /_upstream──> Worker (dsh-gw.<you>.workers.dev)
                                  │  stores tunnel URL in KV (UPSTREAM)
                                  ▼
-ChatGPT ──all other requests──>  proxied verbatim to the current tunnel
+MCP clients ──all other requests──>  proxied verbatim to the current tunnel
 ```
 
 ## Steps
@@ -91,6 +92,8 @@ succeeded. Final check (full chain Worker → tunnel → gateway):
 
 ```bash
 curl "$WORKER_PUBLIC_URL/.well-known/oauth-authorization-server"   # OAuth JSON
+curl "$WORKER_PUBLIC_URL/.well-known/oauth-protected-resource/chatgpt/mcp"
+# The resource field should equal "$WORKER_PUBLIC_URL/chatgpt/mcp".
 ```
 
 ## Troubleshooting
@@ -100,12 +103,12 @@ curl "$WORKER_PUBLIC_URL/.well-known/oauth-authorization-server"   # OAuth JSON
 | `KV binding UPSTREAM is not configured` (500) | binding missing or misnamed — must be exactly `UPSTREAM` |
 | `upstream not registered yet` (503) after `start.sh` | the `/_upstream` PUT failed — check `UPSTREAM_ADMIN_SECRET` and `PROXY` in env.conf |
 | `forbidden` (403) on PUT | secret mismatch between Worker and env.conf |
-| Worker URL unreachable from your machine | network blocks `*.workers.dev` — set `PROXY=` for the launcher (ChatGPT is unaffected) |
+| Worker URL unreachable from your machine | network blocks `*.workers.dev` — set `PROXY=` for the launcher (external clients are unaffected) |
 
 ## Security notes
 
-- The Worker terminates TLS — it sees request/response **plaintext**. That is
-  why OAuth + owner PIN sits inside the payload (`/mcp` is Bearer-protected);
+- TLS terminates at Cloudflare, so the Worker can read requests and
+  responses. All MCP mounts still require OAuth Bearer tokens;
   tunnel-URL leakage alone grants nothing.
 - `ADMIN_SECRET` only guards `PUT /_upstream`; every other path is proxied
   verbatim. A leaked secret lets an attacker repoint your façade at *their*

@@ -53,12 +53,12 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
 ```
 
 可选 Devin：部署目录里的 `devin/README.md` —— 把 package 片段合并进
-`home/profiles/web/package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
-重跑 `./start.sh`。
+`home/profiles/web/package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`；
+若 DSH host 已在运行，请先停止它，再重跑 `./start.sh`。
 
 把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/chatgpt/mcp`，用 owner PIN
-完成 OAuth。Gemini 使用 `$WORKER_PUBLIC_URL/gemini/mcp`；其他 generic
-客户端使用 `$WORKER_PUBLIC_URL/mcp`。
+完成 OAuth。Gemini 可使用 `$WORKER_PUBLIC_URL/gemini/mcp` 或标准通用入口
+`$WORKER_PUBLIC_URL/mcp`。
 
 ## 启动与运维
 
@@ -73,10 +73,11 @@ $EDITOR env.conf               # 填密钥;CLOUDFLARED 指向你的二进制,
   Worker,不受影响。
 - `env.conf` 是 `source` 而非 export —— DSH host 需要的值必须在启动行
   显式转发（这就是 `start.sh` 传 `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"` 的原因）。
-- 日志：`/tmp/dsh-web-host.log`、`/tmp/cloudflared.log`、
-  `/tmp/dsh-mcp-gateway.launch.log` —— 启动级，每次启动截断。
-  `/tmp/dsh-mcp-gateway.log` 是执行日志（access+调用标记），
-  进程内单文件 8 MiB 截头限界。健康检查：`GET /api/chatgpt-bridge/revision`。
+- 日志：`/tmp/cloudflared.log`、`/tmp/dsh-mcp-gateway.launch.log` ——
+  启动级，每次启动截断；`/tmp/dsh-web-host.log` 只在启动 host 时截断
+  （复用 host 时持续追加）。`/tmp/dsh-mcp-gateway.log` 是执行日志
+  （access+调用标记），进程内单文件 8 MiB 截头限界。健康检查：
+  `GET /api/chatgpt-bridge/revision`。
 
 ## 平台说明
 

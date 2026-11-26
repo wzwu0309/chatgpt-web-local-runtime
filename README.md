@@ -2,32 +2,35 @@
 
 English | [中文](README.zh-CN.md)
 
-ChatGPT Web as the reasoning agent + a local DeepSeek Harness as the guarded
-execution runtime, exposed through a fixed public MCP endpoint.
+This project connects a **Web Chat Agent** to a local DeepSeek Harness
+(DSH). The agent reasons and decides what to do; DSH executes locally.
+ChatGPT Web is the primary use case. Gemini and other chat agents can use
+the same bridge through a client that supports remote MCP.
 
 ```
-ChatGPT ──MCP+OAuth──> workers.dev façade ──> rotating quick tunnel
+Web Chat Agent (ChatGPT Web, Gemini, ...) ──MCP+OAuth──> workers.dev façade ──> rotating quick tunnel
         ──> local gateway :8766 ──> local DSH host :3081 ──> DSH tools/sandbox
 ```
 
-ChatGPT needs **one fixed connector URL**, but the quick tunnel rotates on
-every launch. The **Cloudflare Worker façade** bridges that gap: it owns the
-permanent `https://dsh-gw.<you>.workers.dev` origin, keeps the current tunnel
-URL in KV, and `start.sh` republishes it on each run (`PUT /_upstream`,
-Bearer-secreted). Free tier suffices — one-time dashboard setup:
-**[docs/en/cloudflare.md](docs/en/cloudflare.md)**.
+MCP connectors need **stable URLs**, but the quick tunnel rotates on each
+launch. The Cloudflare Worker holds a permanent
+`https://dsh-gw.<you>.workers.dev` origin and stores the active tunnel URL
+in KV. The launcher publishes it on every run (`PUT /_upstream`, protected
+by a Bearer secret). ChatGPT uses `/chatgpt/mcp`; Gemini can use
+`/gemini/mcp` or the canonical generic mount, `/mcp`. The free tier is
+sufficient; see the one-time [Cloudflare setup](docs/en/cloudflare.md).
 
 Read **[docs/en/architecture.md](docs/en/architecture.md)** first — it contains the
-full component inventory, the security model, and every operational caveat
-and fixed. Then deploy via your platform guide:
+full component inventory, the security model, and every operational caveat.
+Then deploy via your platform guide:
 **[macOS](docs/en/macos.md)** or **[Windows](docs/en/windows.md)**.
 
 **Why a whole harness behind one connector:** the bridge deliberately
-projects a full DSH ToolRuntime (sandboxed bash, sessions, skills,
+projects a reviewed set of DSH capabilities (sandboxed bash, sessions, skills,
 `subagent_devin`) instead of shipping a purpose-built tool server like
 [CodexPro](https://github.com/rebel0789/codexpro) — one Node process,
 first-class MCP tools, static token, no sandbox or sessions. The
-trade-off and drop-in compatibility are analyzed in
+trade-offs and backend substitution are analyzed in
 [architecture.md](docs/en/architecture.md#alternative-route-evaluated-a-purpose-built-mcp-server-codexpro).
 
 ## What this adds on top of upstream
@@ -38,7 +41,7 @@ The vendored gateway is only the protocol adapter; running it as a
 - **A fixed public URL.** `worker/_worker.js` is a tiny Cloudflare Worker
   façade holding the connector origin; the launcher republishes the
   rotating quick-tunnel URL to it on every run (`PUT /_upstream`,
-  Bearer-secreted), so ChatGPT's connector URL never changes.
+  protected by a Bearer secret), so connector URLs stay stable as tunnels rotate.
 - **One-command launchers.** `start.sh` / `start.ps1` are idempotent and
   self-locating — reuse a live host, rotate the tunnel with the
   `--allowed-host` + `http2` workarounds baked in, publish upstream,
@@ -50,9 +53,9 @@ The vendored gateway is only the protocol adapter; running it as a
 - **A tested composition.** The cordis patch mounts exactly the plugins
   this bridge needs (persistent shell, task state, remote workers,
   optional gated `subagent_devin`) behind the reviewed
-  `chatgpt-external-v1` capability profile, and the gateway carries three
-  pre-applied source patches (`--allowed-host`, callContract prompts,
-  cross-platform OAuth SQLite) — details in
+  `chatgpt-external-v1` capability profile. The gateway's local extensions
+  include mount-specific exposures, path-aware OAuth, `callContract`
+  hints, and cross-platform OAuth SQLite support — details in
   [architecture.md](docs/en/architecture.md#component-inventory).
 - **Per-OS playbooks.** macOS and Windows guides plus the full operational caveats
   catalog in [architecture.md](docs/en/architecture.md).
@@ -90,9 +93,9 @@ install.sh / install.ps1     idempotent installers (copy + venv + npm + seed)
 dsh-mcp-gateway/             deployment payload -> installed as ~/.dsh-mcp-gateway
   README.md                  payload readme (also the pyproject readme)
   pyproject.toml             vendored gateway manifest ([upstream](https://github.com/siddhartha-yz/dsh-mcp-gateway) @faf9606, MIT)
-  src/dsh_mcp_gateway/       vendored Python gateway source (patch pre-applied)
+  src/dsh_mcp_gateway/       vendored Python gateway source + applied local extensions
   LICENSE                    the gateway's MIT license
-  gateway-local-changes.patch   delta record vs upstream (pre-applied, don't re-apply)
+  gateway-local-changes.patch   historical record of early changes (current state lives in src/)
   env.conf.example           config template (installer seeds env.conf from it)
   start.sh / start.ps1       self-locating idempotent launchers (macOS / Windows)
   worker/_worker.js          Cloudflare Worker façade (KV upstream + bearer PUT)
@@ -126,48 +129,52 @@ Runtime files land in the **install target**, not this repo: `env.conf`,
 2. `~/.dsh-mcp-gateway/start.sh` (or `start.ps1`) — boots host, rotates tunnel,
    publishes upstream to the Worker (one-time setup:
    [cloudflare.md](docs/en/cloudflare.md)), restarts the gateway.
-3. ChatGPT connector URL is permanent: `https://dsh-gw.<you>.workers.dev/mcp`.
-   Re-auth = owner PIN from `env.conf`.
-4. In ChatGPT: `workspace_switch` moves the project root (limited to the
-   allowed subtree, default `~/data/workspace`),
-   `subagent_devin` delegates to Devin (pinned `swe-2-high`), file/shell tools
-   work inside the sandbox boundary.
+3. Use the connector URL for your client:
+   - ChatGPT: `https://dsh-gw.<you>.workers.dev/chatgpt/mcp`
+   - Gemini: `https://dsh-gw.<you>.workers.dev/gemini/mcp`, or the generic URL below
+   - Generic MCP clients: `https://dsh-gw.<you>.workers.dev/mcp`
+
+   Complete OAuth with the owner PIN from `env.conf`.
+4. In ChatGPT, use `workspace_switch` to bind a project to the conversation.
+   On the generic mounts, select a project per call with
+   `dsh_tool_call.workspace`. If enabled, `subagent_devin` delegates to
+   Devin (pinned to `swe-2-high`).
 
 ## Workspace
 
-ChatGPT operates on a **switchable workspace root**, not your whole disk.
-`~` below means your OS home directory (`C:\Users\<you>` on Windows).
+Clients work in a selected **workspace**, not the whole disk by default.
+`~` means your OS home directory (`C:\Users\<you>` on Windows).
 
-- **`WORKSPACE_ALLOWED_ROOT` (env) — the allowed root.** Default `~/data/workspace`;
-  set it in `env.conf` to relocate the whole switchable boundary. The
-  resolved root must exist — a missing directory (default included) fails
-  the launch with a fix-it hint. `workspace_switch` may only retarget
-  inside this subtree — realpath-checked, symlink escapes rejected;
-  switching to the root itself widens the boundary to the whole subtree.
-- **`WORKSPACE` (env var) — the fallback root.** Default:
-  `<WORKSPACE_ALLOWED_ROOT>/default` (`~/data/workspace/default` out of the box —
-  the launcher's working directory). Change via the `WORKSPACE` env var
-  or a `WORKSPACE=<abs path>` line in `env.conf`. Conversations without a
-  binding, and calls without an identity, run here; the directory is
-  created automatically when missing, while an existing non-directory
-  path fails the launch with a fix-it hint.
-- **Persistence:** `workspace_switch` binds only the calling
-  conversation — keyed by the `x-openai-session` header ChatGPT sends
-  per conversation (`mcp-session-id` is the fallback) — and the
-  bindings persist in `home/storages/chatgpt-bridge/session-workspaces.json`
-  across restarts. Conversations that never switched, and calls without
-  an identity, use the launch root (`WORKSPACE`). `workspace_status`
-  reports the calling conversation's root.
-- **Boundary:** sandboxed `bash`/`pwsh` writes stay inside the active
-  root; the read/write/edit file tools follow their own access model.
-  Wrong root after a restart? `workspace_switch` again — or delete
-  `session-workspaces.json` for a full reset (see architecture.md,
-  Operations).
+- **`WORKSPACE_ALLOWED_ROOT` (env):** the allowed root, defaulting to
+  `~/data/workspace`. It must exist at startup. Explicit workspace targets
+  on either exposure must resolve within this subtree (including the root
+  itself); symlink escapes are rejected.
+- **`WORKSPACE` (env):** the launch and fallback root, defaulting to
+  `<WORKSPACE_ALLOWED_ROOT>/default`. The launcher creates it if missing
+  and fails if the path is an existing non-directory. It can be outside
+  the allowed root because it is set by the operator, but clients cannot
+  explicitly route to it in that case. Unbound ChatGPT calls and generic
+  calls without `workspace` use this root.
+- **ChatGPT exposure (`/chatgpt/mcp`):** `workspace_switch` binds only the
+  calling conversation, and `workspace_status` reports its workspace.
+  Bindings use `x-openai-session` and persist in
+  `home/storages/chatgpt-bridge/session-workspaces.json`. If the header
+  is missing, `workspace_switch` fails instead of changing the shared default.
+- **Generic exposure (`/mcp`, `/gemini/mcp`):** pass the optional top-level
+  `workspace` to `dsh_tool_call`; repeat it on later calls to use the same
+  project. It is a routing field, not part of `arguments` or the tool-level
+  `workdir`. The generic exposure does not offer `workspace_switch`,
+  `workspace_status`, or `task_state`.
+- **Sandbox boundary:** sandboxed `bash`/`pwsh` writes are confined to the
+  active root plus OS temporary directories. The `read`/`write`/`edit`
+  tools follow their own access model. Routing selects a helper session
+  keyed by the new cwd; it does not change existing DSH sessions.
 
 ## Credits
 
 The MCP/OAuth gateway is vendored from
 [siddhartha-yz/dsh-mcp-gateway](https://github.com/siddhartha-yz/dsh-mcp-gateway)
-(MIT, upstream commit `faf9606`). Local deltas are pre-applied in
-`dsh-mcp-gateway/src/` and recorded in `gateway-local-changes.patch`; the
-upstream MIT license ships as `dsh-mcp-gateway/LICENSE`.
+(MIT, upstream commit `faf9606`). Current modifications ship in
+`dsh-mcp-gateway/src/`; `gateway-local-changes.patch` is a historical
+record of the early changes, not a current delta. The upstream MIT
+license ships as `dsh-mcp-gateway/LICENSE`.

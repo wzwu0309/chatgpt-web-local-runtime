@@ -23,7 +23,8 @@ Devin 代码、catalog 里也**不会出现**任何 Devin 工具。不用 Devin 
    并把 `devinPath` 指向你的 Devin CLI 二进制。
 3. 在 `env.conf` 里加 `DSH_SUBAGENT_DEVIN=1` —— bridge patch 的 `tool-subagent-devin`
    条目由它门控（`disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'`)。
-4. 重跑 `start.sh` / `start.ps1`。`dsh_tool_catalog` 应能看到 `subagent_devin`。
+4. 若 DSH Web Host 已在运行，请先停止它；启动器会复用健康的 host。再运行
+   `start.sh` / `start.ps1`，确认 `dsh_tool_catalog` 中有 `subagent_devin`。
 
 只有在插件**装好之后**才设 `DSH_SUBAGENT_DEVIN=1` —— 没有 provider 时工具会注册但
 每次调用都在执行期失败。

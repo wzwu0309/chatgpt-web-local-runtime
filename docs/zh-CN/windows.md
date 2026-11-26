@@ -53,12 +53,12 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 可选 Devin：部署目录里的 `devin\README.md` —— 把 package 片段合并进
-`home\profiles\web\package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`、
-重跑 `start.ps1`。
+`home\profiles\web\package.json`、追加 patch 行、设 `DSH_SUBAGENT_DEVIN=1`；
+若 DSH host 已在运行，请先停止它，再重跑 `start.ps1`。
 
 把 ChatGPT 开发者模式连接器指向 `$WORKER_PUBLIC_URL/chatgpt/mcp`，用 owner PIN
-完成 OAuth。Gemini 使用 `$WORKER_PUBLIC_URL/gemini/mcp`；其他 generic
-客户端使用 `$WORKER_PUBLIC_URL/mcp`。
+完成 OAuth。Gemini 可使用 `$WORKER_PUBLIC_URL/gemini/mcp` 或标准通用入口
+`$WORKER_PUBLIC_URL/mcp`。
 
 ## 启动与运维
 
@@ -74,9 +74,10 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
   host —— 没有 macOS 那种 source/export 的坑。
 - 如果网络封了 `*.workers.dev`，在 env.conf 设 `PROXY=` —— Windows 10+
   自带 `curl.exe`，支持 `--proxy`。
-- 日志：`$env:TEMP\dsh-web-host.log`、`cloudflared.log`、
-  `dsh-mcp-gateway.launch.log` —— 启动级，每次启动截断（另有 `*.err.log` —— `Start-Process` 分流
-  stdout/stderr)。健康检查：`GET /api/chatgpt-bridge/revision`。
+- 日志：`$env:TEMP\cloudflared.log`、`dsh-mcp-gateway.launch.log` ——
+  启动级，每次启动截断；`dsh-web-host.log` 只在启动 host 时截断（另有
+  `*.err.log` —— `Start-Process` 分流 stdout/stderr)。健康检查：
+  `GET /api/chatgpt-bridge/revision`。
 
 ## 平台说明
 

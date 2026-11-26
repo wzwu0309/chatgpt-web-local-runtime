@@ -31,8 +31,8 @@ self-locates).
 cd <repo>                      # wherever you keep the project
 
 # 1) installer — copies dsh-mcp-gateway\ to the target, creates the venv,
-#    installs the gateway (editable; upstream @faf9606 + our patch,
-#    pre-applied) and the npm runtime, seeds env.conf.
+#    installs the gateway (editable; upstream @faf9606 + local extensions)
+#    and the npm runtime, seeds env.conf.
 #    Native modules: node-pty/koffi resolve from shipped prebuilds — a
 #    toolchain is only needed on platforms without a matching prebuild.
 #    Re-run any time to refresh code — it never overwrites env.conf,
@@ -40,8 +40,8 @@ cd <repo>                      # wherever you keep the project
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 #                                -> %USERPROFILE%\.dsh-mcp-gateway  (-Target DIR to change)
 
-#    version note: the 0.1.2 pin predates sandbox-policy's
-#    additionalWritableRoots — 0.2.2-rc.3 ships it; bump the pin when needed.
+#    The runtime version is pinned in deploy/dsh-runtime/package.json.
+#    After an upgrade, rerun the golden-path checks and review sandbox policy.
 
 # 2) Worker façade — deploy worker/_worker.js in the Cloudflare dashboard;
 #    step-by-step: docs/en/cloudflare.md
@@ -57,10 +57,14 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 Optional Devin: `devin\README.md` inside the deployment home — merge the
 package snippet into `home\profiles\web\package.json`, append the patch
-rows, set `DSH_SUBAGENT_DEVIN=1`, re-run `start.ps1`.
+rows, set `DSH_SUBAGENT_DEVIN=1`, stop any running DSH host (the launcher
+reuses a healthy one, so it must be stopped once for the new plugin and
+gate to load), then re-run `start.ps1`.
 
-Point the ChatGPT dev-mode connector at `$WORKER_PUBLIC_URL/mcp` and complete
-OAuth with the owner PIN.
+Point the ChatGPT developer-mode connector at `$WORKER_PUBLIC_URL/chatgpt/mcp`
+and complete OAuth with the owner PIN. Gemini can use
+`$WORKER_PUBLIC_URL/gemini/mcp` or the canonical generic mount,
+`$WORKER_PUBLIC_URL/mcp`.
 
 ## Launch & operate
 
@@ -76,10 +80,10 @@ OAuth with the owner PIN.
   env.conf reaches the DSH host naturally — no source/export quirk like macOS.
 - If your network blocks `*.workers.dev`, set `PROXY=` in env.conf —
   `curl.exe` ships with Windows 10+ and supports `--proxy`.
-- Logs: `$env:TEMP\dsh-web-host.log`, `cloudflared.log`,
-  `dsh-mcp-gateway.launch.log` — launch-level, truncated each start
-  (plus `*.err.log` siblings — `Start-Process` splits
-  stdout/stderr). Health: `GET /api/chatgpt-bridge/revision`.
+- Logs: `$env:TEMP\cloudflared.log`, `dsh-mcp-gateway.launch.log` —
+  launch-level, truncated each start; `dsh-web-host.log` is truncated only
+  when the host launches (plus `*.err.log` siblings — `Start-Process`
+  splits stdout/stderr). Health: `GET /api/chatgpt-bridge/revision`.
 
 ## Platform notes
 
@@ -94,8 +98,9 @@ OAuth with the owner PIN.
   disabled) — harmless. The `pwsh` tool covers shell needs.
 - **Binaries**: `node_modules/.bin/dsh.cmd`,
   `.venv\Scripts\dsh-mcp-gateway.exe`.
-- **Workspace root**: `%USERPROFILE%\data\workspace` — the bridge resolves via
-  `os.homedir()`, so `workspace_switch`'s allowed root follows automatically.
-- **Gateway**: the Python venv and our `oauth.py` `/proc/self/fd` fallback
-  already cover Windows — no extra source changes beyond
-  `gateway-local-changes.patch`.
+- **Workspace roots**: the allowed root defaults to
+  `%USERPROFILE%\data\workspace`, and the launch/fallback root to
+  `%USERPROFILE%\data\workspace\default` (the bridge resolves via
+  `os.homedir()`).
+- **Gateway**: the OAuth SQLite fallback is already in `src/dsh_mcp_gateway/`;
+  no Windows-specific patch is needed.

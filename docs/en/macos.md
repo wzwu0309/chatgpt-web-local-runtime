@@ -29,17 +29,16 @@ at `~/.dsh-mcp-gateway` (any target via `--target`; `start.sh` self-locates).
 cd <repo>                      # wherever you keep the project
 
 # 1) installer — copies dsh-mcp-gateway/ to the target, creates the venv,
-#    installs the gateway (editable; upstream @faf9606 + our patch,
-#    pre-applied) and the npm runtime, seeds env.conf.
+#    installs the gateway (editable; upstream @faf9606 + local extensions)
+#    and the npm runtime, seeds env.conf.
 #    Native modules: node-pty/koffi resolve from shipped prebuilds — no
 #    toolchain needed on standard arches (allowScripts table is required).
 #    Re-run any time to refresh code — it never overwrites env.conf,
 #    state/, profile edits, or bin/cloudflared.
 ./install.sh                   # -> ~/.dsh-mcp-gateway   (--target DIR to change)
 
-#    version note: the 0.1.2 pin predates sandbox-policy's
-#    additionalWritableRoots — 0.2.2-rc.3 ships it; bump the pin and re-add
-#    the sandbox-policy block the bridge patch comments about.
+#    The runtime version is pinned in deploy/dsh-runtime/package.json.
+#    After an upgrade, rerun the golden-path checks and review sandbox policy.
 
 # 2) Worker façade — deploy worker/_worker.js in the Cloudflare dashboard;
 #    step-by-step: docs/en/cloudflare.md
@@ -55,10 +54,14 @@ $EDITOR env.conf               # fill secrets; point CLOUDFLARED at your
 
 Optional Devin: `devin/README.md` inside the deployment home — merge the
 package snippet into `home/profiles/web/package.json`, append the patch
-rows, set `DSH_SUBAGENT_DEVIN=1`, re-run `./start.sh`.
+rows, set `DSH_SUBAGENT_DEVIN=1`, stop any running DSH host (the launcher
+reuses a healthy one, so it must be stopped once for the new plugin and
+gate to load), then re-run `./start.sh`.
 
-Point the ChatGPT dev-mode connector at `$WORKER_PUBLIC_URL/mcp` and complete
-OAuth with the owner PIN.
+Point the ChatGPT developer-mode connector at `$WORKER_PUBLIC_URL/chatgpt/mcp`
+and complete OAuth with the owner PIN. Gemini can use
+`$WORKER_PUBLIC_URL/gemini/mcp` or the canonical generic mount,
+`$WORKER_PUBLIC_URL/mcp`.
 
 ## Launch & operate
 
@@ -70,12 +73,13 @@ OAuth with the owner PIN.
   the gateway with `--allowed-host <new-host>`.
 - If your network blocks `*.workers.dev`, set `PROXY=` in env.conf — the
   launcher's own outbound curls (upstream PUT, health check) go through it.
-  ChatGPT reaches the Worker from outside; unaffected.
+  External MCP clients reach the Worker from outside; unaffected.
 - `env.conf` is `source`d, not exported — values the DSH host needs must be
   forwarded explicitly on the launch line (this is why `start.sh` passes
   `DSH_SUBAGENT_DEVIN="${DSH_SUBAGENT_DEVIN:-}"`).
-- Logs: `/tmp/dsh-web-host.log`, `/tmp/cloudflared.log`,
-  `/tmp/dsh-mcp-gateway.launch.log` — launch-level, truncated each start.
+- Logs: `/tmp/cloudflared.log`, `/tmp/dsh-mcp-gateway.launch.log` —
+  launch-level, truncated each start; `/tmp/dsh-web-host.log` is truncated
+  only when the host launches (a reused host keeps appending).
   `/tmp/dsh-mcp-gateway.log` is the execution log (access + call
   markers), a single file bounded to 8 MiB inside the gateway process.
   Health: `GET /api/chatgpt-bridge/revision`.
@@ -87,6 +91,8 @@ OAuth with the owner PIN.
 - **Plugin paths**: cordis patch `name:` fields must be literal — the patch
   template uses `<DSH_GW_HOME>` placeholders; `start.sh` substitutes them
   into `deploy/dsh/chatgpt-bridge.macos.resolved.cordis.yml` before launch.
-- **Workspace root**: `~/data/workspace` (the bridge resolves via `os.homedir()`).
+- **Workspace roots**: the allowed root defaults to `~/data/workspace`, and
+  the launch/fallback root to `~/data/workspace/default` (the bridge
+  resolves via `os.homedir()`).
 - **Optional Devin**: `devin/` + `DSH_SUBAGENT_DEVIN=1`; set `devinPath`
   absolutely (e.g. `~/.local/bin/devin`) so PATH doesn't matter.

@@ -11,8 +11,9 @@ What enabling gives you:
 
 - `devin` LLM provider (via `devin acp`, account auth — no API key env needed)
 - `devin` delegation tool + `/devin` command in interactive sessions
-- `subagent_devin` in the ChatGPT catalog: an in-process DSH child agent loop
-  pinned to `swe-2-high` (model is entry-level; callers cannot override it)
+- `subagent_devin` in the external MCP catalog on both ChatGPT and generic
+  mounts, when enabled. The DSH child agent is pinned to `swe-2-high`;
+  callers cannot override it.
 
 ## Enable
 
@@ -23,7 +24,8 @@ What enabling gives you:
    and set `devinPath` to your Devin CLI binary.
 3. Add `DSH_SUBAGENT_DEVIN=1` to `env.conf` — the bridge patch's `tool-subagent-devin`
    entry is gated on it (`disabled: !!js process.env.DSH_SUBAGENT_DEVIN !== '1'`).
-4. Re-run `start.sh` / `start.ps1`. `dsh_tool_catalog` should now list
+4. Stop any running DSH web host first; the launchers reuse a healthy host.
+   Re-run `start.sh` / `start.ps1` and check that `dsh_tool_catalog` lists
    `subagent_devin`.
 
 Set `DSH_SUBAGENT_DEVIN=1` only **after** the plugin is installed — without the provider
