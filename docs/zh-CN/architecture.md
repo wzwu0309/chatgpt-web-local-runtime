@@ -88,11 +88,13 @@ DSH ToolRuntime → bash/pwsh, read/write/edit, glob/grep, jobs, web,
 `workspace` 的目标必须位于允许根内。若启动根本身位于允许根之外，调用仍可
 因未绑定/省略 `workspace` 而落在那里，但不能通过这两种机制把界外
 `WORKSPACE` 显式设为目标。
-- `DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS`(env，默认空）是部署级额外可写目录，
-  值为绝对物理路径组成的 JSON 数组。它是写授权，不是工作区路由权限，也不扩大
-  `WORKSPACE_ALLOWED_ROOT`；对所有客户端和会话生效。条目在使用时必须存在、是目录
-  且不能经符号链接拼写。macOS/Linux 的 shell 进程沙箱与 DSH 文件工具都遵守；
-  Windows 只有 DSH 文件工具遵守，子进程沙箱忽略额外目录。
+- `DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS`(env，默认空）是部署级额外可写目录。
+  模板中保持注释；只有工具确实需要窄范围例外时才启用，不要使用 `HOME`、
+  `~/Library` 这类宽泛根目录。值为绝对物理路径组成的 JSON 数组。它是写授权，
+  不是工作区路由权限，也不扩大 `WORKSPACE_ALLOWED_ROOT`；对所有客户端和会话
+  生效。条目在使用时必须存在、是目录且不能经符号链接拼写。macOS/Linux 的 shell
+  进程沙箱与 DSH 文件工具都遵守；Windows 只有 DSH 文件工具遵守，子进程沙箱忽略
+  额外目录。
 - bridge 内部的工作区优先级为：显式 envelope `workspace` >
   conversation 持久绑定 > 启动根 `WORKSPACE`。生产 mount 不让两种模式混用：
   ChatGPT exposure 拒绝 `workspace` 参数，generic exposure 不参与绑定。

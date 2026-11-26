@@ -163,10 +163,13 @@ Clients work in a selected **workspace**, not the whole disk by default.
   explicitly route to it in that case. Unbound ChatGPT calls and generic
   calls without `workspace` use this root.
 - **`DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS` (env):** deployment-wide extra
-  writable directories, as a JSON array of absolute physical paths. This is
-  a write grant, not workspace routing, and applies to every client/session.
-  On macOS/Linux it covers sandboxed shell commands and file tools; on
-  Windows it covers file tools only, not sandboxed processes.
+  writable directories. It is empty by default and commented out in the
+  template; enable it only when a tool genuinely needs a narrow exception.
+  The value is a JSON array of absolute physical paths. This is a write grant,
+  not workspace routing, and applies to every client/session; never use broad
+  roots such as `HOME` or `~/Library`. On macOS/Linux it covers sandboxed
+  shell commands and file tools; on Windows it covers file tools only, not
+  sandboxed processes.
 - **ChatGPT exposure (`/chatgpt/mcp`):** `workspace_switch` binds only the
   calling conversation, and `workspace_status` reports its workspace.
   Bindings use `x-openai-session` and persist in

@@ -156,9 +156,11 @@ dsh-mcp-gateway/             部署载荷 -> 装成 ~/.dsh-mcp-gateway
   它是运营者拥有的入口，本身不强制位于允许根内；但若位于界外，客户端不能用
   `workspace_switch` 或 `workspace` 把它显式设为目标。
 - **`DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS`(环境变量)—— 部署级额外可写目录。**
-  JSON 数组，元素为绝对物理目录路径。它是写授权，不扩大工作区路由范围，对所有
-  客户端和会话生效。macOS/Linux 下同时适用于沙箱 shell 与文件工具；Windows 下
-  只适用于文件工具，子进程沙箱忽略这些额外目录。
+  默认为空；模板中保持注释，只有工具确实需要窄范围例外时才启用。JSON 数组，
+  元素为绝对物理目录路径。它是写授权，不扩大工作区路由范围，对所有客户端和
+  会话生效；不要使用 `HOME`、`~/Library` 这类宽泛根目录。macOS/Linux 下同时
+  适用于沙箱 shell 与文件工具；Windows 下只适用于文件工具，子进程沙箱忽略这些
+  额外目录。
 - **ChatGPT 面：会话绑定。** `/chatgpt/mcp` 暴露
   `workspace_switch`/`workspace_status`。绑定以 ChatGPT 每会话携带的
   `x-openai-session` 头为键，持久化在

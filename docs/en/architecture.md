@@ -105,10 +105,12 @@ changes. Use `src/` and the tests as the current reference, not the patch.
   subtree: calls can still use it by default, but clients cannot select
   it explicitly with `workspace_switch` or `workspace`.
 - `DSH_SANDBOX_ADDITIONAL_WRITABLE_ROOTS` (default empty) configures
-  deployment-wide extra writable directories as a JSON array of absolute
-  physical paths. It is a write grant, not workspace routing, and does not
-  extend `WORKSPACE_ALLOWED_ROOT`; it applies to every client/session. Entries
-  must exist, be directories, and not be symlinked spellings when used.
+  deployment-wide extra writable directories. The template keeps it commented
+  out; enable it only when a tool genuinely needs a narrow exception, and never
+  use broad roots such as `HOME` or `~/Library`. The value is a JSON array of
+  absolute physical paths. It is a write grant, not workspace routing, and does
+  not extend `WORKSPACE_ALLOWED_ROOT`; it applies to every client/session.
+  Entries must exist, be directories, and not be symlinked spellings when used.
   macOS/Linux shell confinement and DSH file tools honor them; on Windows only
   file tools honor them, while process confinement ignores extra roots.
 - The bridge checks an explicit `workspace` envelope first, then a
